@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-05-01
+
+- Replace the app icon.
+- Default new document content to a heading prompt (`# `) so a fresh file opens ready for a title.
+
 ## 2026-04-30
 
 - Fix the tab chrome snapping when toggling the sidebar. The tabs now render from the app layout as a root-level overlay whose left edge transitions between the expanded sidebar edge and the collapsed safe inset, instead of switching sidebar-dependent padding inside the moving editor area. See `SPECs/sidebar-toggle-tab-chrome-shift-spec.md`.
