@@ -863,6 +863,7 @@ dependencies = [
  "ignore",
  "image",
  "notify",
+ "objc2",
  "parking_lot",
  "regex-lite",
  "serde",

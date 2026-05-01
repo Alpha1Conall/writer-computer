@@ -88,6 +88,13 @@ impl WorkspaceState {
     pub fn pop_pending_open(&self) -> Option<PendingOpenPayload> {
         self.pending_open.lock().pop_front()
     }
+
+    pub fn has_pending_workspace(&self, path: &Path) -> bool {
+        self.pending_open
+            .lock()
+            .iter()
+            .any(|payload| Path::new(&payload.workspace) == path)
+    }
 }
 
 /// Process-wide registry of per-window `WorkspaceState`, keyed by Tauri
@@ -137,9 +144,11 @@ impl AppState {
         self.windows.write().remove(label)
     }
 
-    /// Find an existing window already hosting `path`. Used to focus
-    /// rather than duplicate when the user opens a workspace that's
-    /// already open in another window.
+    /// Find an existing window already hosting or opening `path`. Used to
+    /// focus rather than duplicate when the user opens a workspace that's
+    /// already open in another window. Pending opens are included so two
+    /// quick requests for the same workspace do not race before the new
+    /// window hydrates and publishes `workspace_root`.
     pub fn find_by_workspace(&self, path: &Path) -> Option<String> {
         let map = self.windows.read();
         for (label, state) in map.iter() {
@@ -148,6 +157,11 @@ impl AppState {
                 if root == path {
                     return Some(label.clone());
                 }
+            }
+            drop(guard);
+
+            if state.has_pending_workspace(path) {
+                return Some(label.clone());
             }
         }
         None
@@ -188,4 +202,24 @@ pub fn rebuild_dirs_from_index(files: &[IndexedFile], root: &Path) -> HashSet<Pa
         register_ancestors(&mut dirs, &file.path, root);
     }
     dirs
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn find_by_workspace_matches_pending_open() {
+        let app_state = AppState::new();
+        let window_state = app_state.get_or_create("pending-window");
+        window_state.push_pending_open(PendingOpenPayload {
+            workspace: "/tmp/workspace".to_string(),
+            file: None,
+        });
+
+        assert_eq!(
+            app_state.find_by_workspace(Path::new("/tmp/workspace")),
+            Some("pending-window".to_string())
+        );
+    }
 }

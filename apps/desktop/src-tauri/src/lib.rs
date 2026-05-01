@@ -1,5 +1,7 @@
 mod commands;
 mod config;
+#[cfg(target_os = "macos")]
+mod dock_menu;
 mod error;
 mod ignore;
 pub mod open_target;
@@ -80,6 +82,9 @@ pub(crate) fn open_new_workspace_window(
     file: Option<String>,
 ) -> Result<(), AppError> {
     let workspace = PathBuf::from(&workspace_path);
+    if !workspace.exists() || !workspace.is_dir() {
+        return Err(AppError::NotFound(workspace_path));
+    }
 
     if let Some(existing_label) = app.state::<AppState>().find_by_workspace(&workspace) {
         if let Some(window) = app.get_webview_window(&existing_label) {
@@ -367,6 +372,8 @@ pub fn run() {
                 app.handle()
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
                 install_app_menu(app.handle(), config_dir)?;
+                #[cfg(target_os = "macos")]
+                dock_menu::install(app.handle());
 
                 // Kick off the launch check once the window is ready to show
                 // any follow-up dialogs on top of a visible app.

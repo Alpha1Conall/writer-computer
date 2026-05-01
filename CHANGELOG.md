@@ -4,6 +4,7 @@
 
 - Fix the tab chrome snapping when toggling the sidebar. The tabs now render from the app layout as a root-level overlay whose left edge transitions between the expanded sidebar edge and the collapsed safe inset, instead of switching sidebar-dependent padding inside the moving editor area. See `SPECs/sidebar-toggle-tab-chrome-shift-spec.md`.
 - Rename the bundled Codex theme preset to Writer. The preset values are unchanged; only the default preset label and bundled theme folder changed.
+- Show recent workspaces in the macOS Dock icon context menu. The menu is built from Writer's existing recent workspace list, omits missing folders, and reuses the multi-window open path so selecting an already-open workspace focuses that window instead of duplicating it. See `SPECs/recent-workspaces-dock-menu-spec.md`.
 - Prepare the repository for a fresh private GitHub repo: remove internal triage artifacts and screenshots, replace starter READMEs with Writer-specific docs, and point release/updater metadata at `joelbqz/writer-computer`.
 
 ## 2026-04-28

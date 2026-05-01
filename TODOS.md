@@ -48,6 +48,7 @@ Previously-triaged work organized by phase. Pull into `Up Next` as capacity open
 
 - Sidebar toggle tab chrome shift: [`SPECs/sidebar-toggle-tab-chrome-shift-spec.md`](SPECs/sidebar-toggle-tab-chrome-shift-spec.md)
 - Rename bundled Codex theme preset to Writer.
+- Recent workspaces Dock menu: [`SPECs/recent-workspaces-dock-menu-spec.md`](SPECs/recent-workspaces-dock-menu-spec.md) — right-clicking the macOS Dock icon now shows existing recent workspaces above the default Dock menu items; choosing one opens a new workspace window or focuses an existing one.
 - Editor search lifecycle refactor: [`SPECs/editor-search-lifecycle-spec.md`](SPECs/editor-search-lifecycle-spec.md) — closes CodeMirror and React search state together, clears stale editor views on close/unmount, and updates CodeMirror from input events instead of a query-sync render effect.
 
 - Theming system: [`SPECs/theming-system-spec.md`](SPECs/theming-system-spec.md) — CSS-var-driven primaries (accent, bg, fg, fonts, translucency, contrast) per light/dark mode with derived overlays. Supersedes `body-theming-spec.md`.
