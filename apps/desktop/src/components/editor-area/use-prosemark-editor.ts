@@ -427,7 +427,7 @@ function createEditorExtensions(
     htmlBlockDecorations(),
     mermaidDecorations(),
     imageSrcResolver(getFilePath),
-    wikiLinkExtension(isDisposed),
+    wikiLinkExtension(getFilePath, isDisposed),
     markdownFormatting,
 
     EditorView.updateListener.of((update) => {
