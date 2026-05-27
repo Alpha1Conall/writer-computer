@@ -1,115 +1,60 @@
 import { syntaxTree } from "@codemirror/language";
 import {
-  type EditorState,
+  type ChangeSpec,
+  EditorSelection,
+  EditorState,
   type Extension,
   Prec,
   type Range,
+  type SelectionRange,
   StateField,
   type StateCommand,
   type TransactionSpec,
 } from "@codemirror/state";
-import { Decoration, type DecorationSet, EditorView, WidgetType, keymap } from "@codemirror/view";
+import { Decoration, type DecorationSet, EditorView, keymap } from "@codemirror/view";
 import { eventHandlersWithClass } from "../utils";
 
-// Single source of truth for the width of the visual list prefix unit.
-// Drives widget sizing and hanging-indent geometry together — tweak this
-// constant to resize the whole list-rendering column.
+// Visual list geometry. Keep indent steps and marker column aligned to the
+// source prefix width; caret boundary tuning happens on the inner source mark.
 const LIST_UNIT_CH = 3;
+const LIST_INDENT_SPACES = 2;
 
 // Cap on how far `findPrevListItemIndent` walks backward looking for a
 // parent. List nesting in practice is shallow; this avoids O(n) on giant
 // docs with no blank-line breaks between items.
 const PREV_LIST_LOOKBACK = 256;
 
-// Point-widget rendering of list prefixes (bullet, task checkbox) plus a
-// mark-based hide of the corresponding source chars. This is the structural
-// fix for the click/drag anchor-snap on body text of list lines: CM's
-// `posAtCoords` algorithm (`InlineCoordsScan.scanTile`) explicitly skips
-// PointWidget tiles when computing closeness — `child.flags & 48 → return
-// null` from `getRects` — but it does NOT skip Replace tiles, which is why
-// the previous `Decoration.replace` bullet/checkbox/spacer widgets caused
-// hit-tests on body text to snap to `widgetTo` (col 2 / col 6 / col 10
-// depending on depth). Widgets via `Decoration.widget({side: -1})` render
-// at the same visual position without participating in the closeness scan;
-// source chars get a `Decoration.mark` styled as a zero-inline-width clipped
-// box. They stay in the DOM for WebKit/CodeMirror geometry, but they do not
-// affect the rendered list body position. Each widget's width is depth-aware
-// so the bullet/checkbox glyph still hangs at the right edge of the prefix
-// gutter.
+// Measurable source-backed rendering of bullet/task prefixes. The full source
+// prefix (leading whitespace + `- ` or `- [ ] `) remains in normal inline flow
+// as a fixed-width mark. CSS hides the source text and draws the visible marker
+// on the same span, so hit-testing and drawn selection geometry see stable text
+// boxes rather than collapsed prefix spans plus widget tiles.
+const listPrefixDecoration = (depth: number, kind: "bullet" | "task", checked = false) => {
+  const prefixCh = (depth + 1) * LIST_UNIT_CH;
+  const markerOffsetCh = depth * LIST_UNIT_CH;
+  const classes = ["cm-list-prefix", `cm-list-prefix-${kind}`];
+  if (checked) classes.push("cm-list-prefix-task-checked");
+  return Decoration.mark({
+    class: classes.join(" "),
+    attributes: {
+      style: [
+        `width: ${prefixCh.toString()}ch`,
+        `--cm-list-marker-offset: ${markerOffsetCh.toString()}ch`,
+        `--cm-list-marker-width: ${LIST_UNIT_CH.toString()}ch`,
+      ].join("; "),
+    },
+  });
+};
 
-class BulletMarkerWidget extends WidgetType {
-  constructor(private readonly depth: number) {
-    super();
-  }
-  eq(other: BulletMarkerWidget): boolean {
-    return other.depth === this.depth;
-  }
-
-  toDOM(): HTMLElement {
-    const el = document.createElement("span");
-    el.className = "cm-list-bullet-marker";
-    el.textContent = "•";
-    // Width = full prefix (depth + 1 widget-units). `padding-left = depth *
-    // LIST_UNIT` shrinks the centered area to the rightmost widget-unit so
-    // the glyph sits where the bullet used to hang regardless of depth.
-    const prefixCh = (this.depth + 1) * LIST_UNIT_CH;
-    const padLeftCh = this.depth * LIST_UNIT_CH;
-    el.style.width = `${prefixCh.toString()}ch`;
-    el.style.paddingLeft = `${padLeftCh.toString()}ch`;
-    el.style.boxSizing = "border-box";
-    el.setAttribute("aria-hidden", "true");
-    return el;
-  }
-
-  ignoreEvent(): boolean {
-    return false;
-  }
-}
-
-class CheckboxWidget extends WidgetType {
-  constructor(
-    private readonly depth: number,
-    private readonly checked: boolean,
-  ) {
-    super();
-  }
-
-  eq(other: CheckboxWidget): boolean {
-    return other.depth === this.depth && other.checked === this.checked;
-  }
-
-  toDOM(): HTMLElement {
-    const el = document.createElement("span");
-    el.className = this.checked ? "cm-checkbox cm-checkbox-checked" : "cm-checkbox";
-    // Give browser Range/coordsAtPos measurement a real text node. The
-    // visible checkbox is CSS-drawn on ::before, but drawSelection relies on
-    // DOM geometry and pseudo-only widgets can produce bad selection rects.
-    el.textContent = "\u200b";
-    const prefixCh = (this.depth + 1) * LIST_UNIT_CH;
-    const padLeftCh = this.depth * LIST_UNIT_CH;
-    el.style.width = `${prefixCh.toString()}ch`;
-    el.style.paddingLeft = `${padLeftCh.toString()}ch`;
-    el.style.boxSizing = "border-box";
-    el.setAttribute("aria-hidden", "true");
-    return el;
-  }
-
-  ignoreEvent(): boolean {
-    return false;
-  }
-}
-
-// Hide the source prefix chars (leading whitespace + `- ` or `- [ ] `) with
-// CSS while keeping them in the DOM. The corresponding theme rule gives the
-// hidden span zero inline width plus 1px text metrics: WebKit needs those
-// metrics for CodeMirror's left-edge `posAtCoords` probe when drawing
-// selections on TODO lines.
-const listPrefixHiddenDecoration = Decoration.mark({ class: "cm-list-prefix-hidden" });
+const listIndentVisualDecoration = (depth: number) =>
+  Decoration.mark({
+    class: "cm-list-indent-visual",
+    attributes: { style: `width: ${(depth * LIST_UNIT_CH).toString()}ch` },
+  });
 
 // Internal marker decoration (no visible class) — used purely to populate
-// the marker / atomic range sets for the `listBackspace` handler and
-// arrow-key skipping. Replaces the previous shared `bulletMarkerDecoration`
-// which doubled as both rendering and tracking.
+// marker / atomic range sets. Rendering and interaction decisions are handled
+// separately from these tracking ranges.
 const listPrefixMarkerDecoration = Decoration.mark({});
 
 // Wraps the body text of a list item (everything after the prefix through
@@ -142,16 +87,42 @@ const orderedMarkerDecoration = Decoration.mark({
 // in the trailing-char gates so tab-separated markers render.
 const isMarkerTrailingChar = (ch: string): boolean => ch === " " || ch === "\t";
 
+interface ParsedBulletTaskLine {
+  lineFrom: number;
+  markerFrom: number;
+  bodyFrom: number;
+  indentLen: number;
+  markerLen: number;
+  isTask: boolean;
+}
+
+// Captures unordered/task-list source prefixes only. Ordered lists keep their
+// native CodeMirror/markdown behavior.
+const BULLET_TASK_LINE_RE = /^([ \t]*)([-+*]) (\[[ xX]\] )?/;
+
+function parseBulletTaskLine(line: { from: number; text: string }): ParsedBulletTaskLine | null {
+  const match = BULLET_TASK_LINE_RE.exec(line.text);
+  if (!match) return null;
+  const indentLen = match[1]?.length ?? 0;
+  const markerLen = match[0].length - indentLen;
+  return {
+    lineFrom: line.from,
+    markerFrom: line.from + indentLen,
+    bodyFrom: line.from + match[0].length,
+    indentLen,
+    markerLen,
+    isTask: match[3] !== undefined,
+  };
+}
+
 interface ListDecorations {
   /** Marker + spacers + body wraps + per-line hanging-indent. Drives
    *  rendering. */
   all: DecorationSet;
-  /** Drives atomic cursor motion — every list widget (bullet, task, every
-   *  spacer) skips as a unit. */
+  /** Drives atomic cursor motion — every source prefix/indent step skips as a
+   *  unit. */
   atomic: DecorationSet;
-  /** Bullet + task ranges only. Backspace at one of these right edges
-   *  extends the deletion to `line.from`, so wiping the marker also clears
-   *  the leading indent that was carrying its nesting. */
+  /** Bullet + task marker ranges only. */
   marker: DecorationSet;
 }
 
@@ -211,6 +182,7 @@ function buildListDecorations(state: EditorState): ListDecorations {
       const leadingTo = node.from;
       const leadingLen = leadingTo - leadingFrom;
       if (depth >= 1 && leadingLen >= depth) {
+        allRanges.push(listIndentVisualDecoration(depth).range(leadingFrom, leadingTo));
         const step = Math.floor(leadingLen / depth);
         for (let i = 0; i < depth; i++) {
           const subFrom = leadingFrom + i * step;
@@ -220,15 +192,13 @@ function buildListDecorations(state: EditorState): ListDecorations {
         }
       }
 
-      // Task vs plain bullet: tasks render one CheckboxWidget over the
-      // full prefix range, plain bullets render one BulletMarkerWidget.
-      // Both use `Decoration.widget({side: -1})` so CM's `posAtCoords`
-      // scan classifies them as PointWidget tiles and skips them when
-      // computing hit-test closeness — no widgetTo boundary for body-text
-      // hits to snap to.
+      // Task vs plain bullet: both render one measurable source-backed prefix
+      // mark over the full source prefix. Avoid widgets here: horizontal drag
+      // selection should hit normal inline boxes, not widget boundaries.
       const cursor = node.node.cursor();
       let prefixEnd = -1;
-      let widget: WidgetType | null = null;
+      let prefixKind: "bullet" | "task" = "bullet";
+      let checked = false;
       if (cursor.nextSibling() && cursor.name === "Task") {
         const taskCursor = cursor.node.cursor();
         if (
@@ -236,35 +206,18 @@ function buildListDecorations(state: EditorState): ListDecorations {
           taskCursor.name === "TaskMarker" &&
           isMarkerTrailingChar(state.doc.sliceString(taskCursor.to, taskCursor.to + 1))
         ) {
-          const checked =
+          checked =
             state.doc.sliceString(taskCursor.from + 1, taskCursor.to - 1).toLowerCase() === "x";
           prefixEnd = taskCursor.to + 1;
-          widget = new CheckboxWidget(depth, checked);
+          prefixKind = "task";
         }
       }
-      if (widget === null) {
+      if (prefixEnd < 0) {
         prefixEnd = node.to + 1;
-        widget = new BulletMarkerWidget(depth);
       }
-      // Hide the source prefix chars (leading whitespace + `- ` or
-      // `- [ ] `) via the clipped zero-width `.cm-list-prefix-hidden` span.
-      // Chars stay in the DOM as text nodes — that's the load-bearing
-      // difference from `Decoration.replace`: hit-tests resolve into the
-      // collapsed text rect instead of snapping to a widgetTo boundary.
-      allRanges.push(listPrefixHiddenDecoration.range(line.from, prefixEnd));
-      // Point widget at prefixEnd, side -1 → rendered after the hidden
-      // source prefix, which has zero inline width, so the marker still
-      // occupies the visual prefix gutter. Anchoring it at prefixEnd keeps
-      // the existing marker widget available as the body-column coordinate
-      // target when the list item is empty.
-      allRanges.push(Decoration.widget({ widget, side: -1 }).range(prefixEnd));
-      // Marker / atomic tracking — `listBackspace` checks `decos.marker`
-      // for the right-edge-of-prefix case (delete the whole prefix back to
-      // line.from), and `decos.atomic` already carries indent-step ranges
-      // from the loop above. Add the full-prefix range to both.
-      const fullPrefixDeco = listPrefixMarkerDecoration.range(line.from, prefixEnd);
-      markerRanges.push(fullPrefixDeco);
-      atomicRanges.push(fullPrefixDeco);
+      allRanges.push(listPrefixDecoration(depth, prefixKind, checked).range(line.from, prefixEnd));
+      markerRanges.push(listPrefixMarkerDecoration.range(node.from, prefixEnd));
+      atomicRanges.push(listPrefixMarkerDecoration.range(node.from, prefixEnd));
 
       // Wrap the body text (everything after the prefix through end of
       // line) so consumers can style it via `.cm-list-body`. Skipped when
@@ -275,7 +228,7 @@ function buildListDecorations(state: EditorState): ListDecorations {
 
       // Hanging-indent on every list line: pad the line by the rendered
       // prefix width and pull the first visual line back by the same amount.
-      // The point widget occupies that pulled-back slot, while wrapped
+      // The prefix mark occupies that pulled-back slot, while wrapped
       // continuation lines keep the padding so body text stays aligned.
       const prefixCh = (depth + 1) * LIST_UNIT_CH;
       const lineStyle = `padding-inline-start: ${prefixCh.toString()}ch; text-indent: -${prefixCh.toString()}ch;`;
@@ -353,6 +306,243 @@ const isOnListLine = (state: EditorState, pos: number): boolean => {
   return found;
 };
 
+function parseBulletTaskLineAt(state: EditorState, pos: number): ParsedBulletTaskLine | null {
+  const line = state.doc.lineAt(pos);
+  const parsed = parseBulletTaskLine(line);
+  if (!parsed) return null;
+  if (pos > line.to) return null;
+  return parsed;
+}
+
+function clampCollapsedListPrefixRange(state: EditorState, range: SelectionRange): SelectionRange {
+  if (!range.empty) return range;
+  const parsed = parseBulletTaskLineAt(state, range.head);
+  if (!parsed) return range;
+
+  let pos = range.head;
+  if (pos > parsed.lineFrom && pos < parsed.markerFrom) {
+    pos = parsed.markerFrom;
+  } else if (pos > parsed.markerFrom && pos < parsed.bodyFrom) {
+    pos = parsed.bodyFrom;
+  } else {
+    return range;
+  }
+  return EditorSelection.cursor(pos);
+}
+
+const listPrefixSelectionGuard = EditorState.transactionFilter.of((tr) => {
+  if (!tr.selection) return tr;
+  let changed = false;
+  const ranges = tr.newSelection.ranges.map((range) => {
+    const clamped = clampCollapsedListPrefixRange(tr.state, range);
+    if (clamped !== range) changed = true;
+    return clamped;
+  });
+  if (!changed) return tr;
+  return [tr, { selection: EditorSelection.create(ranges, tr.newSelection.mainIndex) }];
+});
+
+function selectedLineNumbers(state: EditorState): number[] {
+  const numbers = new Set<number>();
+  for (const range of state.selection.ranges) {
+    const fromLine = state.doc.lineAt(range.from);
+    const endPos = range.empty ? range.to : Math.max(range.from, range.to - 1);
+    const toLine = state.doc.lineAt(endPos);
+    for (let line = fromLine.number; line <= toLine.number; line++) {
+      numbers.add(line);
+    }
+  }
+  return [...numbers].sort((a, b) => a - b);
+}
+
+const listIndentSelection: StateCommand = ({ state, dispatch }) => {
+  const changes: ChangeSpec[] = [];
+  let sawListLine = false;
+
+  for (const lineNumber of selectedLineNumbers(state)) {
+    const line = state.doc.line(lineNumber);
+    const parsed = parseBulletTaskLine(line);
+    if (!parsed) continue;
+    sawListLine = true;
+
+    const prevIndent = findPrevListItemIndent(
+      state,
+      line.number,
+      (indent) => indent <= parsed.indentLen,
+    );
+    if (prevIndent < 0) continue;
+
+    const targetIndent = prevIndent + LIST_INDENT_SPACES;
+    if (parsed.indentLen >= targetIndent) continue;
+
+    changes.push({ from: line.from, insert: " ".repeat(targetIndent - parsed.indentLen) });
+  }
+
+  if (!sawListLine) return false;
+  if (changes.length > 0) {
+    dispatch(state.update({ changes, userEvent: "input.indent" }));
+  }
+  return true;
+};
+
+const listOutdentSelection: StateCommand = ({ state, dispatch }) => {
+  const changes: ChangeSpec[] = [];
+  let sawListLine = false;
+
+  for (const lineNumber of selectedLineNumbers(state)) {
+    const line = state.doc.line(lineNumber);
+    const parsed = parseBulletTaskLine(line);
+    if (!parsed) continue;
+    sawListLine = true;
+    if (parsed.indentLen === 0) continue;
+
+    const removeLen = Math.min(LIST_INDENT_SPACES, parsed.indentLen);
+    changes.push({ from: line.from, to: line.from + removeLen });
+  }
+
+  if (!sawListLine) return false;
+  if (changes.length > 0) {
+    dispatch(state.update({ changes, userEvent: "delete.outdent" }));
+  }
+  return true;
+};
+
+function listPrefixBoundaryMove(state: EditorState, direction: "left" | "right"): number | null {
+  const sel = state.selection.main;
+  if (!sel.empty) return null;
+  const parsed = parseBulletTaskLineAt(state, sel.head);
+  if (!parsed) return null;
+  if (direction === "left") {
+    if (sel.head === parsed.bodyFrom) return parsed.markerFrom;
+    if (parsed.markerFrom > parsed.lineFrom && sel.head === parsed.markerFrom) {
+      return parsed.lineFrom;
+    }
+  } else {
+    if (sel.head === parsed.lineFrom) {
+      return parsed.markerFrom > parsed.lineFrom ? parsed.markerFrom : parsed.bodyFrom;
+    }
+    if (parsed.markerFrom > parsed.lineFrom && sel.head === parsed.markerFrom) {
+      return parsed.bodyFrom;
+    }
+  }
+  return null;
+}
+
+function markerColumnWidthPx(target: HTMLElement): number {
+  const style = getComputedStyle(target);
+  const raw = style.getPropertyValue("--cm-list-marker-width").trim();
+  if (!raw.endsWith("ch")) return 0;
+  const ch = Number(raw.slice(0, -2));
+  if (!Number.isFinite(ch) || ch <= 0) return 0;
+
+  const probe = document.createElement("span");
+  probe.textContent = "0";
+  probe.style.position = "absolute";
+  probe.style.visibility = "hidden";
+  probe.style.font = style.font;
+  target.appendChild(probe);
+  const chWidth = probe.getBoundingClientRect().width;
+  probe.remove();
+  return ch * chWidth;
+}
+
+function listPrefixClickPosition(view: EditorView, event: MouseEvent): number | null {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return null;
+  const prefix = target.closest<HTMLElement>(".cm-list-prefix");
+  if (!prefix) return null;
+
+  const pos = view.posAtDOM(prefix);
+  const parsed = parseBulletTaskLineAt(view.state, pos);
+  if (!parsed) return null;
+
+  const rect = prefix.getBoundingClientRect();
+  if (rect.width <= 0) return parsed.bodyFrom;
+
+  const markerWidth = markerColumnWidthPx(prefix) || rect.width;
+  const markerStartX = Math.max(rect.left, rect.right - markerWidth);
+  const x = event.clientX;
+
+  if (x < markerStartX) {
+    return x - rect.left < markerStartX - x ? parsed.lineFrom : parsed.markerFrom;
+  }
+  return x - markerStartX < rect.right - x ? parsed.markerFrom : parsed.bodyFrom;
+}
+
+const listPrefixMouseHandler = Prec.highest(
+  EditorView.domEventHandlers({
+    mousedown(event, view) {
+      if (event.button !== 0) return false;
+      const pos = listPrefixClickPosition(view, event);
+      if (pos === null) return false;
+      event.preventDefault();
+      event.stopPropagation();
+      view.dispatch({ selection: { anchor: pos }, scrollIntoView: true, userEvent: "select" });
+      view.focus();
+      return true;
+    },
+  }),
+);
+
+const listPrefixArrowKeymap = Prec.highest(
+  keymap.of([
+    {
+      key: "ArrowLeft",
+      run: (view) => {
+        const pos = listPrefixBoundaryMove(view.state, "left");
+        if (pos === null) return false;
+        view.dispatch({
+          selection: { anchor: pos },
+          scrollIntoView: true,
+          userEvent: "select",
+        });
+        return true;
+      },
+    },
+    {
+      key: "ArrowRight",
+      run: (view) => {
+        const pos = listPrefixBoundaryMove(view.state, "right");
+        if (pos === null) return false;
+        view.dispatch({
+          selection: { anchor: pos },
+          scrollIntoView: true,
+          userEvent: "select",
+        });
+        return true;
+      },
+    },
+    {
+      key: "Shift-ArrowLeft",
+      run: (view) => {
+        const pos = listPrefixBoundaryMove(view.state, "left");
+        if (pos === null) return false;
+        const sel = view.state.selection.main;
+        view.dispatch({
+          selection: EditorSelection.range(sel.anchor, pos),
+          scrollIntoView: true,
+          userEvent: "select.extend",
+        });
+        return true;
+      },
+    },
+    {
+      key: "Shift-ArrowRight",
+      run: (view) => {
+        const pos = listPrefixBoundaryMove(view.state, "right");
+        if (pos === null) return false;
+        const sel = view.state.selection.main;
+        view.dispatch({
+          selection: EditorSelection.range(sel.anchor, pos),
+          scrollIntoView: true,
+          userEvent: "select.extend",
+        });
+        return true;
+      },
+    },
+  ]),
+);
+
 // `StateCommand` signature instead of `(view) => boolean` keeps the
 // handlers testable: tests can call them with `{state, dispatch}` directly
 // (no `EditorView`/DOM needed). EditorView satisfies the same shape, so
@@ -369,11 +559,8 @@ const isOnListLine = (state: EditorState, pos: number): boolean => {
 // through and insert a literal `\t` — that would break the list parse.
 const listIndent: StateCommand = ({ state, dispatch }) => {
   if (state.readOnly) return false;
-  // Multi-cursor / non-empty selection: consume so the fall-through
-  // `indentWithTab` doesn't insert `\t` characters that break list parsing
-  // on any of the selected lines. Multi-line list indent is a TODO.
   if (state.selection.ranges.length !== 1 || !state.selection.main.empty) {
-    return isOnListLineAtAnyRange(state);
+    return listIndentSelection({ state, dispatch });
   }
   const sel = state.selection.main;
   if (!isOnListLine(state, sel.head)) return false;
@@ -383,7 +570,7 @@ const listIndent: StateCommand = ({ state, dispatch }) => {
 
   const prevIndent = findPrevListItemIndent(state, line.number, (i) => i <= currentIndent);
   if (prevIndent < 0) return true;
-  const targetIndent = prevIndent + 2;
+  const targetIndent = prevIndent + LIST_INDENT_SPACES;
   if (currentIndent >= targetIndent) return true;
 
   const insertLen = targetIndent - currentIndent;
@@ -398,12 +585,11 @@ const listIndent: StateCommand = ({ state, dispatch }) => {
 };
 
 // Shift-Tab on a list line: align to the nearest previous list item with
-// a strictly shallower indent — i.e. step up one nesting level. Same
-// multi-cursor-consume policy as `listIndent`.
+// a strictly shallower indent — i.e. step up one nesting level.
 const listOutdent: StateCommand = ({ state, dispatch }) => {
   if (state.readOnly) return false;
   if (state.selection.ranges.length !== 1 || !state.selection.main.empty) {
-    return isOnListLineAtAnyRange(state);
+    return listOutdentSelection({ state, dispatch });
   }
   const sel = state.selection.main;
   if (!isOnListLine(state, sel.head)) return false;
@@ -488,26 +674,6 @@ const listEnter: StateCommand = ({ state, dispatch }) => {
   return true;
 };
 
-// CodeMirror 6's `deleteCharBackward` from `@codemirror/commands` DOES
-// respect `atomicRanges` via `skipAtomic` — but it deletes exactly the
-// atomic range, not more. This handler is what gives the user-visible
-// "Backspace at a bullet wipes the leading indent too" behavior: at a
-// marker's right edge, deletion is extended to `line.from`. At a spacer's
-// right edge, just the spacer's source chars go (one indent step). The
-// handler is also what makes lang-markdown's `deleteMarkupBackward` skip
-// list-line backspacing (we return true and stop the chain).
-const findEndsAt = (set: DecorationSet, lineStart: number, head: number): number => {
-  let from = -1;
-  set.between(lineStart, head, (rangeFrom, rangeTo) => {
-    if (rangeTo === head) {
-      from = rangeFrom;
-      return false;
-    }
-    return undefined;
-  });
-  return from;
-};
-
 const listBackspace: StateCommand = ({ state, dispatch }) => {
   if (state.readOnly) return false;
   if (state.selection.ranges.length !== 1) return false;
@@ -515,47 +681,53 @@ const listBackspace: StateCommand = ({ state, dispatch }) => {
   if (!range.empty) return false;
 
   const head = range.head;
-  const decos = state.field(listDecorationsField);
-  const lineStart = state.doc.lineAt(head).from;
+  const parsed = parseBulletTaskLineAt(state, head);
+  if (!parsed) return false;
 
-  // Bullet/task first: extend to line.from so leading indent goes with it.
-  if (findEndsAt(decos.marker, lineStart, head) >= 0) {
+  let effectiveHead = head;
+  if (head > parsed.lineFrom && head < parsed.markerFrom) {
+    effectiveHead = parsed.markerFrom;
+  } else if (head > parsed.markerFrom && head < parsed.bodyFrom) {
+    effectiveHead = parsed.bodyFrom;
+  }
+
+  if (effectiveHead === parsed.lineFrom) return false;
+
+  if (effectiveHead === parsed.markerFrom) {
+    if (parsed.indentLen === 0) return false;
+    const from = parsed.markerFrom - Math.min(LIST_INDENT_SPACES, parsed.indentLen);
     dispatch(
       state.update({
-        changes: { from: lineStart, to: head },
-        selection: { anchor: lineStart },
+        changes: { from, to: parsed.markerFrom },
+        selection: { anchor: from },
         userEvent: "delete.list",
       }),
     );
     return true;
   }
 
-  // Spacer: delete just the one indent step's chars.
-  const spacerFrom = findEndsAt(decos.atomic, lineStart, head);
-  if (spacerFrom < 0) return false;
-  dispatch(
-    state.update({
-      changes: { from: spacerFrom, to: head },
-      selection: { anchor: spacerFrom },
-      userEvent: "delete.list",
-    }),
-  );
-  return true;
+  if (effectiveHead === parsed.bodyFrom) {
+    const from =
+      parsed.indentLen > 0
+        ? parsed.markerFrom - Math.min(LIST_INDENT_SPACES, parsed.indentLen)
+        : parsed.markerFrom;
+    dispatch(
+      state.update({
+        changes: { from, to: parsed.bodyFrom },
+        selection: { anchor: from },
+        userEvent: "delete.list",
+      }),
+    );
+    return true;
+  }
+
+  return false;
 };
 
-// Returns true if any selection range's `head` sits on a list line. Used
-// by the Tab/Shift-Tab multi-cursor short-circuit so we still consume the
-// keystroke (suppressing `indentWithTab`) even when we won't act on it.
-const isOnListLineAtAnyRange = (state: EditorState): boolean =>
-  state.selection.ranges.some((r) => isOnListLine(state, r.head));
-
-// Click-toggle for the checkbox widget. Keep this on `click`, not
-// `mousedown`: mousedown is CodeMirror's drag-selection start gesture, and
-// consuming it makes TODO lines feel broken when the user drags across the
-// checkbox. A drag won't fire click, so selection and toggle stay distinct.
-// The primary path toggles from the source slice beginning at the list marker;
-// the line fallback handles point widgets whose DOM position resolves to the
-// line start on indented tasks.
+// Click-toggle for the checkbox prefix. Keep this on `click`, not `mousedown`:
+// mousedown is CodeMirror's drag-selection start gesture, and consuming it makes
+// TODO lines feel broken when the user drags across the checkbox. A drag won't
+// fire click, so selection and toggle stay distinct.
 export const computeCheckboxToggle = (
   state: EditorState,
   widgetStartPos: number,
@@ -586,10 +758,10 @@ const computeCheckboxToggleFromLine = (state: EditorState, pos: number): Transac
 const checkboxClickHandler = EditorView.domEventHandlers(
   eventHandlersWithClass({
     click: {
-      "cm-checkbox": (ev, view) => {
+      "cm-list-prefix-task": (ev, view) => {
         const pos = view.posAtDOM(ev.target as HTMLElement);
         const spec =
-          computeCheckboxToggle(view.state, pos) ?? computeCheckboxToggleFromLine(view.state, pos);
+          computeCheckboxToggleFromLine(view.state, pos) ?? computeCheckboxToggle(view.state, pos);
         if (!spec) return false;
         view.dispatch(spec);
         return true; // prevent default
@@ -600,6 +772,9 @@ const checkboxClickHandler = EditorView.domEventHandlers(
 
 export const listExtension: Extension = [
   listDecorationsField,
+  listPrefixSelectionGuard,
+  listPrefixMouseHandler,
+  listPrefixArrowKeymap,
   // `Prec.highest` wins over `@codemirror/lang-markdown`'s `Prec.high`
   // keymap (which also binds Enter and Backspace via
   // `insertNewlineContinueMarkup` / `deleteMarkupBackward`). On non-list
@@ -620,8 +795,11 @@ export const listExtension: Extension = [
 // Internals exposed only for tests. Not part of the public API.
 export const __test = {
   buildListDecorations,
+  clampCollapsedListPrefixRange,
   computeCheckboxToggleFromLine,
   isOnListLine,
+  listPrefixBoundaryMove,
+  parseBulletTaskLine,
   findPrevListItemIndent,
   currentLineIndentLen,
   listEnter,

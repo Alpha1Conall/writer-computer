@@ -11,8 +11,11 @@ import { ensureSyntaxTree } from "@codemirror/language";
 import { computeCheckboxToggle, listExtension, __test } from "../src/lib/prosemark-core/list";
 
 const {
+  clampCollapsedListPrefixRange,
   computeCheckboxToggleFromLine,
   isOnListLine,
+  listPrefixBoundaryMove,
+  parseBulletTaskLine,
   findPrevListItemIndent,
   listEnter,
   listBackspace,
@@ -41,17 +44,23 @@ function run(cmd: StateCommand, state: EditorState): { state: EditorState; ran: 
   return { state: next, ran };
 }
 
-function widgetNames(state: EditorState): Array<{ from: number; to: number; name: string }> {
+function prefixMarks(
+  state: EditorState,
+): Array<{ from: number; to: number; className: string; style: string }> {
   const decos = state.field(__test.listDecorationsField);
-  const widgets: Array<{ from: number; to: number; name: string }> = [];
+  const marks: Array<{ from: number; to: number; className: string; style: string }> = [];
   decos.all.between(0, state.doc.length, (from, to, deco) => {
-    const widget = (deco.spec as { widget?: unknown }).widget;
-    if (typeof widget !== "object" || widget === null) return;
-    const ctor = (widget as { constructor?: unknown }).constructor;
-    if (typeof ctor !== "function") return;
-    widgets.push({ from, to, name: ctor.name });
+    const spec = deco.spec as { class?: unknown; attributes?: { style?: unknown } };
+    if (typeof spec.class !== "string") return;
+    if (!spec.class.includes("cm-list-prefix")) return;
+    marks.push({
+      from,
+      to,
+      className: spec.class,
+      style: typeof spec.attributes?.style === "string" ? spec.attributes.style : "",
+    });
   });
-  return widgets;
+  return marks;
 }
 
 // ---------------------------------------------------------------------------
@@ -84,6 +93,71 @@ describe("isOnListLine", () => {
   test("true on ordered-list lines (ListMark is present)", () => {
     const s = makeState("1. foo");
     expect(isOnListLine(s, 3)).toBe(true);
+  });
+});
+
+describe("parseBulletTaskLine", () => {
+  test("returns the three list-prefix boundaries for nested bullets", () => {
+    const s = makeState("    - item", 0);
+    expect(parseBulletTaskLine(s.doc.line(1))).toEqual({
+      lineFrom: 0,
+      markerFrom: 4,
+      bodyFrom: 6,
+      indentLen: 4,
+      markerLen: 2,
+      isTask: false,
+    });
+  });
+
+  test("treats the full task checkbox as the marker", () => {
+    const s = makeState("  - [x] item", 0);
+    expect(parseBulletTaskLine(s.doc.line(1))).toEqual({
+      lineFrom: 0,
+      markerFrom: 2,
+      bodyFrom: 8,
+      indentLen: 2,
+      markerLen: 6,
+      isTask: true,
+    });
+  });
+
+  test("does not parse ordered lists", () => {
+    const s = makeState("1. item", 0);
+    expect(parseBulletTaskLine(s.doc.line(1))).toBeNull();
+  });
+});
+
+describe("list prefix caret zones", () => {
+  test("clamps collapsed carets inside indentation to marker start", () => {
+    const s = makeState("    - item", 0);
+    const range = clampCollapsedListPrefixRange(s, EditorSelection.cursor(2));
+    expect(range.from).toBe(4);
+    expect(range.to).toBe(4);
+  });
+
+  test("clamps collapsed carets inside marker to body start", () => {
+    const s = makeState("    - item", 0);
+    const range = clampCollapsedListPrefixRange(s, EditorSelection.cursor(5));
+    expect(range.from).toBe(6);
+    expect(range.to).toBe(6);
+  });
+
+  test("leaves non-empty selections alone", () => {
+    const s = makeState("    - item", 0);
+    const range = EditorSelection.range(2, 5);
+    expect(clampCollapsedListPrefixRange(s, range)).toBe(range);
+  });
+
+  test("moves left and right across only the allowed prefix boundaries", () => {
+    expect(listPrefixBoundaryMove(makeState("    - item", 6), "left")).toBe(4);
+    expect(listPrefixBoundaryMove(makeState("    - item", 4), "left")).toBe(0);
+    expect(listPrefixBoundaryMove(makeState("    - item", 0), "right")).toBe(4);
+    expect(listPrefixBoundaryMove(makeState("    - item", 4), "right")).toBe(6);
+  });
+
+  test("does not get stuck on top-level items where line start equals marker start", () => {
+    expect(listPrefixBoundaryMove(makeState("- item", 0), "left")).toBeNull();
+    expect(listPrefixBoundaryMove(makeState("- item", 0), "right")).toBe(2);
   });
 });
 
@@ -186,7 +260,7 @@ describe("listEnter", () => {
 // ---------------------------------------------------------------------------
 
 describe("listBackspace", () => {
-  test("at bullet right edge wipes `- ` and leading indent", () => {
+  test("at nested bullet body start removes marker and one indent level", () => {
     const s = makeState("  - foo", 4);
     const { state, ran } = run(listBackspace, s);
     expect(ran).toBe(true);
@@ -194,25 +268,42 @@ describe("listBackspace", () => {
     expect(state.selection.main.head).toBe(0);
   });
 
-  test("at bullet right edge (no indent) wipes just `- `", () => {
+  test("at top-level bullet body start removes just `- `", () => {
     const s = makeState("- foo", 2);
     expect(run(listBackspace, s).state.doc.toString()).toBe("foo");
   });
 
-  test("at task right edge wipes `- [ ] ` and leading indent", () => {
+  test("at nested task body start removes marker and one indent level", () => {
     const s = makeState("  - [ ] task", 8);
     const { state } = run(listBackspace, s);
     expect(state.doc.toString()).toBe("task");
   });
 
-  test("at spacer right edge removes one indent step only", () => {
+  test("at marker start removes one indent level only", () => {
     // `    - c` only renders as a depth-2 list item when there's a proper
     // parent chain above (Lezer treats 4 leading spaces at top level as a
     // code block). Build the chain so the depth-2 spacer split exists.
-    const s = makeState("- a\n  - b\n    - c", 12);
+    const s = makeState("- a\n  - b\n    - c", 14);
     const { state } = run(listBackspace, s);
     expect(state.doc.toString()).toBe("- a\n  - b\n  - c");
-    expect(state.selection.main.head).toBe(10);
+    expect(state.selection.main.head).toBe(12);
+  });
+
+  test("at top-level marker start falls through", () => {
+    const s = makeState("- foo", 0);
+    expect(run(listBackspace, s).ran).toBe(false);
+  });
+
+  test("at nested body start removes marker and one indent level", () => {
+    const s = makeState("- a\n  - b\n    - c", 16);
+    const { state } = run(listBackspace, s);
+    expect(state.doc.toString()).toBe("- a\n  - b\n  c");
+    expect(state.selection.main.head).toBe(12);
+  });
+
+  test("at line start falls through", () => {
+    const s = makeState("  - foo", 0);
+    expect(run(listBackspace, s).ran).toBe(false);
   });
 
   test("defers when cursor isn't at any list-decoration right edge", () => {
@@ -269,6 +360,20 @@ describe("listIndent (Tab)", () => {
     const s = makeState("hello", 5);
     expect(run(listIndent, s).ran).toBe(false);
   });
+
+  test("indents every selected list line that can move deeper", () => {
+    const s = makeState("- a\n- b\n- c", 4, 11);
+    const { state, ran } = run(listIndent, s);
+    expect(ran).toBe(true);
+    expect(state.doc.toString()).toBe("- a\n  - b\n  - c");
+  });
+
+  test("leaves non-list lines unchanged in multi-line selections", () => {
+    const s = makeState("- a\npara\n- b", 0, 12);
+    const { state, ran } = run(listIndent, s);
+    expect(ran).toBe(true);
+    expect(state.doc.toString()).toBe("- a\npara\n  - b");
+  });
 });
 
 describe("listOutdent (Shift-Tab)", () => {
@@ -294,6 +399,13 @@ describe("listOutdent (Shift-Tab)", () => {
     expect(ran).toBe(true);
     expect(state.doc.toString()).toBe("- a");
   });
+
+  test("outdents every selected nested list line one level", () => {
+    const s = makeState("- a\n  - b\n  - c", 4, 15);
+    const { state, ran } = run(listOutdent, s);
+    expect(ran).toBe(true);
+    expect(state.doc.toString()).toBe("- a\n- b\n- c");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -301,7 +413,7 @@ describe("listOutdent (Shift-Tab)", () => {
 // ---------------------------------------------------------------------------
 
 describe("computeCheckboxToggle", () => {
-  test("toggles `[ ]` → `[x]` at the widget start", () => {
+  test("toggles `[ ]` → `[x]` at the marker start", () => {
     const s = makeState("- [ ] task");
     const spec = computeCheckboxToggle(s, 0);
     expect(spec).not.toBeNull();
@@ -314,9 +426,9 @@ describe("computeCheckboxToggle", () => {
     expect(spec?.changes).toEqual({ from: 3, to: 4, insert: " " });
   });
 
-  test("works on indented task (widget start at the `-`, not line.from)", () => {
+  test("works on indented task (marker start at the `-`, not line.from)", () => {
     const s = makeState("  - [ ] nested");
-    // Widget for the nested task starts at pos 2 (the `-`).
+    // The nested task marker starts at pos 2 (the `-`).
     const spec = computeCheckboxToggle(s, 2);
     expect(spec?.changes).toEqual({ from: 5, to: 6, insert: "x" });
   });
@@ -375,28 +487,62 @@ describe("listDecorationsField", () => {
     expect(total).toBe(6);
   });
 
-  test("anchors the bullet marker at the hidden prefix end", () => {
+  test("renders the bullet prefix as a source-backed mark", () => {
     const s = makeState("- ", 2);
-    expect(widgetNames(s).filter((w) => w.name === "BulletMarkerWidget")).toEqual([
-      { from: 2, to: 2, name: "BulletMarkerWidget" },
+    expect(prefixMarks(s)).toEqual([
+      {
+        from: 0,
+        to: 2,
+        className: "cm-list-prefix cm-list-prefix-bullet",
+        style: "width: 3ch; --cm-list-marker-offset: 0ch; --cm-list-marker-width: 3ch",
+      },
     ]);
   });
 
-  test("anchors the checkbox marker at the hidden prefix end", () => {
+  test("renders the checkbox prefix as a source-backed mark", () => {
     const s = makeState("- [ ] ", 6);
-    expect(widgetNames(s).filter((w) => w.name === "CheckboxWidget")).toEqual([
-      { from: 6, to: 6, name: "CheckboxWidget" },
+    expect(prefixMarks(s)).toEqual([
+      {
+        from: 0,
+        to: 6,
+        className: "cm-list-prefix cm-list-prefix-task",
+        style: "width: 3ch; --cm-list-marker-offset: 0ch; --cm-list-marker-width: 3ch",
+      },
     ]);
   });
 
-  test("uses the same marker anchor when body text exists", () => {
+  test("uses the same prefix range when body text exists", () => {
     const bullet = makeState("- body", 2);
     const task = makeState("- [ ] body", 6);
-    expect(widgetNames(bullet).filter((w) => w.name === "BulletMarkerWidget")).toEqual([
-      { from: 2, to: 2, name: "BulletMarkerWidget" },
+    expect(prefixMarks(bullet)).toEqual([
+      {
+        from: 0,
+        to: 2,
+        className: "cm-list-prefix cm-list-prefix-bullet",
+        style: "width: 3ch; --cm-list-marker-offset: 0ch; --cm-list-marker-width: 3ch",
+      },
     ]);
-    expect(widgetNames(task).filter((w) => w.name === "CheckboxWidget")).toEqual([
-      { from: 6, to: 6, name: "CheckboxWidget" },
+    expect(prefixMarks(task)).toEqual([
+      {
+        from: 0,
+        to: 6,
+        className: "cm-list-prefix cm-list-prefix-task",
+        style: "width: 3ch; --cm-list-marker-offset: 0ch; --cm-list-marker-width: 3ch",
+      },
     ]);
+  });
+
+  test("marks checked tasks and carries nested marker geometry", () => {
+    const s = makeState("- a\n  - [x] nested", 16);
+    expect(prefixMarks(s).filter((mark) => mark.className.includes("cm-list-prefix-task"))).toEqual(
+      [
+        {
+          from: 4,
+          to: 12,
+          className: "cm-list-prefix cm-list-prefix-task cm-list-prefix-task-checked",
+          style: "width: 6ch; --cm-list-marker-offset: 3ch; --cm-list-marker-width: 3ch",
+        },
+      ],
+    );
   });
 });
