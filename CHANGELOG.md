@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-05-27
+
+- Refresh the compatible Rust dependency lockfile for the Tauri app. The available `vite-plus` JavaScript toolchain lock update is deferred because it introduces broad NodeNext import-extension/typechecking failures in existing tests under `vp check`.
+
 ## 2026-05-26
 
 - Change the default editor line height to 1.8 so new and reset paragraph spacing matches the app's typographic fallback.
