@@ -41,14 +41,14 @@ export function CompactFileLayout() {
         }}
       >
         <LayoutGroup>
-          <div className="relative w-[min(240px,calc(100vw-40px))]">
+          <div className="relative flex justify-center">
             <button
               type="button"
               aria-haspopup="tree"
               aria-expanded={isNavigatorOpen}
               aria-label="Open file navigator"
               onClick={() => setIsNavigatorOpen((open) => !open)}
-              className="group relative flex h-[var(--chrome-control-height)] w-full items-center justify-center rounded-lg border border-transparent bg-transparent px-9 text-center text-[13px] text-[var(--fg-base)]"
+              className="group relative inline-flex h-[var(--chrome-control-height)] max-w-[min(240px,calc(100vw-40px))] items-center justify-center gap-1.5 rounded-lg border border-transparent bg-transparent px-3 text-[13px] text-[var(--fg-base)]"
             >
               {!isNavigatorOpen && (
                 <motion.div
@@ -57,12 +57,12 @@ export function CompactFileLayout() {
                   className="absolute inset-0 rounded-lg bg-[var(--surface-input)] transition-colors group-hover:bg-[var(--surface-subtle-strong)]"
                 />
               )}
-              <span className="relative min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">
+              <span className="relative min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
                 {title}
               </span>
               <span
                 aria-hidden="true"
-                className={`absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-icon-muted)] transition-transform duration-150 ease-out ${
+                className={`relative shrink-0 text-[var(--text-icon-muted)] transition-transform duration-150 ease-out ${
                   isNavigatorOpen ? "rotate-180" : ""
                 }`}
               >
