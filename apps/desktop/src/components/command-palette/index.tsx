@@ -16,8 +16,13 @@ import {
   useOpenCommandPalette,
   useSetCommandPaletteSearch,
 } from "@/hooks/use-command-palette";
+import { useSetSetting } from "@/hooks/use-settings";
 import { useSidebar } from "@/hooks/use-sidebar";
-import { useIsCompactFileMode, useWorkspace } from "@/hooks/use-workspace";
+import {
+  useIsCompactFileMode,
+  useSetWorkspaceChromeMode,
+  useWorkspace,
+} from "@/hooks/use-workspace";
 import {
   useActiveTabId,
   useCloseActiveTab,
@@ -30,6 +35,7 @@ import {
 import { useTheme } from "@/hooks/use-theme";
 import { useFuzzySearch } from "./use-fuzzy-search";
 import { settingsKind } from "@/components/editor-area/page-kinds/settings";
+import { COMPACT_MODE_SETTING_KEY } from "@/lib/compact-mode";
 import { getFileName } from "@/lib/paths";
 import * as tauri from "@/lib/tauri";
 
@@ -55,6 +61,8 @@ export function CommandPalette() {
   const activeTabId = useActiveTabId();
   const tabs = useOpenTabs();
   const { toggleTheme } = useTheme();
+  const setSetting = useSetSetting();
+  const setChromeMode = useSetWorkspaceChromeMode();
   const openSettingsTab = useOpenSettingsTab();
   const isCompactFileMode = useIsCompactFileMode();
 
@@ -92,6 +100,13 @@ export function CommandPalette() {
     if (picked) {
       await openWorkspace(picked);
     }
+    close();
+  }
+
+  function handleToggleCompactMode() {
+    const next = !isCompactFileMode;
+    void setSetting(COMPACT_MODE_SETTING_KEY, next);
+    if (!next) setChromeMode("workspace");
     close();
   }
 
@@ -157,6 +172,12 @@ export function CommandPalette() {
         toggleTheme();
         close();
       },
+    },
+    {
+      id: "toggle-compact-mode",
+      label: "Toggle Compact Mode",
+      description: "Command",
+      run: handleToggleCompactMode,
     },
     !isCompactFileMode && {
       id: "open-settings",

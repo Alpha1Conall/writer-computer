@@ -6,6 +6,7 @@
 
 ## Done
 
+- Compact mode setting: [`SPECs/compact-mode-setting-spec.md`](SPECs/compact-mode-setting-spec.md) — make compact chrome a persisted appearance setting with a command-palette toggle, while removing the debug-only compact launch environment variable.
 - Compact single-file window: [`SPECs/compact-window-spec.md`](SPECs/compact-window-spec.md) — use compact chrome for explicit single-file opens with no sidebar, no sidebar toggle, no tab strip, and a top dropdown that reuses Pinned, Recents, and Everything navigation.
 - Floating card shadow polish — add a large subtle shadow to the shared command-palette/popover card surface.
 - Sidebar sections redesign: [`SPECs/sidebar-sections-spec.md`](SPECs/sidebar-sections-spec.md) — split the sidebar into collapsible Pinned, Recents, and Everything sections; keep the existing file tree under Everything; add per-workspace pinned files and compact metadata-backed recent files with Show More pagination.

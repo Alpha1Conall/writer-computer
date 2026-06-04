@@ -38,6 +38,14 @@
       "default": "system"
     },
     {
+      "key": "appearance.compact-mode",
+      "label": "Compact Mode",
+      "description": "Use compact editor chrome without the sidebar or tabs",
+      "category": "Appearance",
+      "type": "boolean",
+      "default": false
+    },
+    {
       "key": "appearance.sidebar-width",
       "label": "Sidebar Width",
       "description": "Default sidebar width in pixels",

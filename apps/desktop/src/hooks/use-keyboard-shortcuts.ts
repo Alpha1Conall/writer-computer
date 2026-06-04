@@ -3,6 +3,7 @@ import { useUIStore } from "@/stores/ui-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { toggleSidebar } from "@/hooks/use-sidebar";
+import { getWorkspaceChromeMode } from "@/lib/compact-mode";
 
 function isEditableTargetFocused(): boolean {
   const active = document.activeElement;
@@ -30,7 +31,7 @@ export function useKeyboardShortcuts() {
         navigateBack,
         navigateForward,
       } = useEditorStore.getState();
-      const isCompactFileMode = chromeMode === "compact-file";
+      const isCompactFileMode = getWorkspaceChromeMode(root, chromeMode) === "compact-file";
 
       // Alt+Arrow: history navigation when no editable target is focused;
       // inside the editor, let CodeMirror handle word-wise cursor motion.

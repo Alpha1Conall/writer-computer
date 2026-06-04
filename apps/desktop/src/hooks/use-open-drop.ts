@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { getWorkspaceChromeMode } from "@/lib/compact-mode";
 import { mark } from "@/lib/startup-metrics";
 import type { PendingOpenPayload } from "@/lib/tauri";
 import * as tauri from "@/lib/tauri";
@@ -25,7 +26,11 @@ export async function handleOpenPayload(payload: PendingOpenPayload) {
 
   if (payload.file) {
     const latestWorkspaceState = useWorkspaceStore.getState();
-    if (!current || latestWorkspaceState.chromeMode === "compact-file") {
+    const chromeMode = getWorkspaceChromeMode(
+      latestWorkspaceState.root,
+      latestWorkspaceState.chromeMode,
+    );
+    if (!current || chromeMode === "compact-file") {
       latestWorkspaceState.setChromeMode("compact-file");
       await useEditorStore.getState().openCompactFile(payload.file);
       return;
