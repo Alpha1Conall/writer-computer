@@ -327,6 +327,7 @@ input {
   fill: none;
   stroke: var(--compact-picker-border-color);
   stroke-width: 1;
+  stroke-linejoin: round;
   transition:
     x 240ms cubic-bezier(0.32, 0, 0.2, 1),
     y 240ms cubic-bezier(0.32, 0, 0.2, 1),

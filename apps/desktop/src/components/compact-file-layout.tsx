@@ -19,7 +19,8 @@ const PICKER_GAP_PX = 8;
 const PICKER_MAX_OPEN_HEIGHT = 560;
 const PICKER_VIEWPORT_HEIGHT_OFFSET = 96;
 const PICKER_CLOSED_RADIUS = 8;
-const PICKER_OPEN_RADIUS = 12;
+const PICKER_OPEN_RADIUS = 16;
+const PICKER_BORDER_INSET = 0.5;
 const FALLBACK_PICKER_METRICS = {
   triggerWidth: 120,
   triggerHeight: 32,
@@ -155,6 +156,11 @@ export function CompactFileLayout() {
   const pickerMaskWidth = isNavigatorOpen ? pickerMetrics.rootWidth : pickerMetrics.triggerWidth;
   const pickerMaskHeight = isNavigatorOpen ? pickerMetrics.openHeight : pickerMetrics.triggerHeight;
   const pickerMaskRadius = isNavigatorOpen ? PICKER_OPEN_RADIUS : PICKER_CLOSED_RADIUS;
+  const pickerBorderLeft = pickerMaskLeft + PICKER_BORDER_INSET;
+  const pickerBorderTop = pickerMaskTop + PICKER_BORDER_INSET;
+  const pickerBorderWidth = Math.max(0, pickerMaskWidth - PICKER_BORDER_INSET * 2);
+  const pickerBorderHeight = Math.max(0, pickerMaskHeight - PICKER_BORDER_INSET * 2);
+  const pickerBorderRadius = Math.max(0, pickerMaskRadius - PICKER_BORDER_INSET);
   const pickerMaskRight = Math.max(0, pickerMetrics.rootWidth - pickerMaskLeft - pickerMaskWidth);
   const pickerMaskBottom = Math.max(0, pickerShellHeight - pickerMaskTop - pickerMaskHeight);
   const pickerMaskClipPath = `inset(${pickerMaskTop}px ${pickerMaskRight}px ${pickerMaskBottom}px ${pickerMaskLeft}px round ${pickerMaskRadius}px)`;
@@ -176,11 +182,11 @@ export function CompactFileLayout() {
     height: `${pickerMetrics.openHeight}px`,
   } as CSSProperties;
   const pickerBorderStyle = {
-    "--compact-picker-border-x": `${pickerMaskLeft}px`,
-    "--compact-picker-border-y": `${pickerMaskTop}px`,
-    "--compact-picker-border-width": `${pickerMaskWidth}px`,
-    "--compact-picker-border-height": `${pickerMaskHeight}px`,
-    "--compact-picker-border-radius": `${pickerMaskRadius}px`,
+    "--compact-picker-border-x": `${pickerBorderLeft}px`,
+    "--compact-picker-border-y": `${pickerBorderTop}px`,
+    "--compact-picker-border-width": `${pickerBorderWidth}px`,
+    "--compact-picker-border-height": `${pickerBorderHeight}px`,
+    "--compact-picker-border-radius": `${pickerBorderRadius}px`,
   } as CSSProperties;
 
   return (
@@ -242,12 +248,12 @@ export function CompactFileLayout() {
             >
               <rect
                 className="compact-picker-border-rect"
-                x={pickerMaskLeft}
-                y={pickerMaskTop}
-                width={pickerMaskWidth}
-                height={pickerMaskHeight}
-                rx={pickerMaskRadius}
-                ry={pickerMaskRadius}
+                x={pickerBorderLeft}
+                y={pickerBorderTop}
+                width={pickerBorderWidth}
+                height={pickerBorderHeight}
+                rx={pickerBorderRadius}
+                ry={pickerBorderRadius}
                 style={pickerBorderStyle}
               />
             </svg>
