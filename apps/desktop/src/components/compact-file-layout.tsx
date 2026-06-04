@@ -215,12 +215,13 @@ export function CompactFileLayout() {
           >
             <div aria-hidden="true" className="compact-picker-card-surface absolute inset-0" />
             {isPickerMounted && (
-              <div
-                className={`compact-picker-card-mask absolute inset-0 z-10 transform-gpu transition-[opacity,transform] duration-150 ease-out ${
-                  isNavigatorOpen ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
-                }`}
-              >
-                <div style={pickerNavigatorStyle}>
+              <div className="compact-picker-card-mask absolute inset-0 z-10">
+                <div
+                  className={`transform-gpu transition-[opacity,transform] duration-200 ease-out ${
+                    isNavigatorOpen ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
+                  }`}
+                  style={pickerNavigatorStyle}
+                >
                   <ScrollFade className="h-full overflow-y-auto px-2 py-3 scrollbar-none">
                     <SidebarNavigator
                       openFile={handleOpenFile}
