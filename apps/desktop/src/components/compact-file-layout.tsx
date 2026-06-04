@@ -6,8 +6,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import { EditorArea } from "./editor-area";
 import { SidebarNavigator } from "./sidebar/sidebar-navigator";
 import { ScrollFade } from "@/components/scroll-fade";
@@ -265,16 +263,19 @@ export function CompactFileLayout() {
             </span>
             <span
               aria-hidden="true"
-              className={`relative shrink-0 text-[var(--text-icon-muted)] transition-transform duration-150 ease-out ${
-                isNavigatorOpen ? "rotate-180" : ""
+              className={`relative flex h-3 w-3 shrink-0 items-center justify-center text-[var(--text-icon-muted)] transition-transform duration-150 ease-out ${
+                isNavigatorOpen ? "rotate-90" : ""
               }`}
             >
-              <HugeiconsIcon
-                icon={ArrowDown01Icon}
-                size={16}
-                color="currentColor"
-                strokeWidth={2}
-              />
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path
+                  d="M4.5 3.5L7.5 6L4.5 8.5"
+                  stroke="currentColor"
+                  strokeWidth={1.6}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
             </span>
           </button>
         </div>
