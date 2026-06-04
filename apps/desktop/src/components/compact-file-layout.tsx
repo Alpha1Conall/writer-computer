@@ -128,7 +128,13 @@ export function CompactFileLayout() {
             className="group relative z-30 inline-flex h-[var(--chrome-control-height)] max-w-[240px] items-center justify-center gap-1.5 rounded-lg border border-transparent bg-transparent px-3 font-[inherit] text-[13px] text-[var(--fg-base)]"
           >
             {!isPickerMounted && (
-              <div className="pointer-events-none absolute inset-0 rounded-lg bg-transparent transition-colors group-hover:bg-[var(--surface-input)]" />
+              <div
+                className="surface-card pointer-events-none absolute inset-0 rounded-lg opacity-0 transition-opacity duration-150 ease-out group-hover:opacity-100"
+                style={{
+                  borderColor: "transparent",
+                  boxShadow: "none",
+                }}
+              />
             )}
             <span className="relative min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
               {title}
