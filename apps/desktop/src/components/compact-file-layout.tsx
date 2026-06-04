@@ -1,5 +1,4 @@
-import { useCallback, useState } from "react";
-import { Popover } from "@base-ui/react/popover";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import { LayoutGroup, motion } from "motion/react";
@@ -9,6 +8,7 @@ import { ScrollFade } from "@/components/scroll-fade";
 import { useActiveFilePath, useOpenCompactFile, useOpenFiles } from "@/hooks/use-tabs";
 import { getFileName } from "@/lib/paths";
 
+const PICKER_POPUP_ID = "compact-file-picker-popup";
 const PICKER_SURFACE_LAYOUT_ID = "compact-file-picker-surface";
 const pickerTransition = { duration: 0.2, ease: "circOut" } as const;
 
@@ -17,6 +17,7 @@ export function CompactFileLayout() {
   const openFiles = useOpenFiles();
   const openCompactFile = useOpenCompactFile();
   const [isNavigatorOpen, setIsNavigatorOpen] = useState(false);
+  const pickerRootRef = useRef<HTMLDivElement>(null);
   const activeFile = activeFilePath ? openFiles.get(activeFilePath) : null;
   const title = activeFilePath ? activeFile?.title || getFileName(activeFilePath) : "Choose file";
 
@@ -26,6 +27,29 @@ export function CompactFileLayout() {
     },
     [openCompactFile],
   );
+
+  useEffect(() => {
+    if (!isNavigatorOpen) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (target instanceof Node && pickerRootRef.current?.contains(target)) return;
+      setIsNavigatorOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setIsNavigatorOpen(false);
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isNavigatorOpen]);
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-transparent text-text-primary">
@@ -42,10 +66,15 @@ export function CompactFileLayout() {
         }}
       >
         <LayoutGroup>
-          <Popover.Root open={isNavigatorOpen} onOpenChange={(open) => setIsNavigatorOpen(open)}>
-            <Popover.Trigger
+          <div ref={pickerRootRef} className="relative flex justify-center">
+            <button
+              type="button"
               aria-label="Open file navigator"
-              className="group relative inline-flex h-[var(--chrome-control-height)] max-w-[min(240px,calc(100vw-40px))] items-center justify-center gap-1.5 rounded-lg border border-transparent bg-transparent px-3 text-[13px] text-[var(--fg-base)]"
+              aria-haspopup="dialog"
+              aria-controls={isNavigatorOpen ? PICKER_POPUP_ID : undefined}
+              aria-expanded={isNavigatorOpen}
+              onClick={() => setIsNavigatorOpen((open) => !open)}
+              className="group relative inline-flex h-[var(--chrome-control-height)] max-w-[min(240px,calc(100vw-40px))] items-center justify-center gap-1.5 rounded-lg border border-transparent bg-transparent px-3 font-[inherit] text-[13px] text-[var(--fg-base)]"
             >
               {!isNavigatorOpen && (
                 <motion.div
@@ -70,13 +99,14 @@ export function CompactFileLayout() {
                   strokeWidth={2}
                 />
               </span>
-            </Popover.Trigger>
+            </button>
 
-            <Popover.Positioner side="bottom" align="center" sideOffset={8} className="z-50">
-              <Popover.Popup
-                initialFocus={false}
-                finalFocus={false}
-                className="relative w-[min(360px,calc(100vw-40px))] rounded-xl outline-none"
+            {isNavigatorOpen && (
+              <div
+                id={PICKER_POPUP_ID}
+                role="dialog"
+                aria-label="File navigator"
+                className="absolute left-1/2 top-full z-50 mt-2 w-[min(360px,calc(100vw-40px))] -translate-x-1/2 rounded-xl outline-none"
               >
                 <motion.div
                   aria-hidden="true"
@@ -94,9 +124,9 @@ export function CompactFileLayout() {
                     />
                   </ScrollFade>
                 </div>
-              </Popover.Popup>
-            </Popover.Positioner>
-          </Popover.Root>
+              </div>
+            )}
+          </div>
         </LayoutGroup>
       </div>
 
