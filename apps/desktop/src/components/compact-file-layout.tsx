@@ -13,7 +13,7 @@ import { useActiveFilePath, useOpenCompactFile, useOpenFiles } from "@/hooks/use
 import { getFileName } from "@/lib/paths";
 
 const PICKER_POPUP_ID = "compact-file-picker-popup";
-const PICKER_ANIMATION_MS = 240;
+const PICKER_ANIMATION_MS = 260;
 const PICKER_TRIGGER_BG_CLOSE_DELAY_MS = 90;
 const PICKER_GAP_PX = 8;
 const PICKER_MAX_LIST_HEIGHT = 420;
