@@ -16,7 +16,7 @@ const PICKER_POPUP_ID = "compact-file-picker-popup";
 const PICKER_ANIMATION_MS = 240;
 const PICKER_TRIGGER_BG_CLOSE_DELAY_MS = 90;
 const PICKER_GAP_PX = 8;
-const PICKER_MAX_LIST_HEIGHT = 320;
+const PICKER_MAX_LIST_HEIGHT = 420;
 const PICKER_VIEWPORT_HEIGHT_OFFSET = 96;
 const PICKER_CLOSED_RADIUS = 8;
 const PICKER_OPEN_RADIUS = 16;
@@ -329,7 +329,7 @@ export function CompactFileLayout() {
                   >
                     <ScrollFade
                       ref={pickerListRef}
-                      className="max-h-[320px] overflow-y-auto px-2 py-3 scrollbar-none"
+                      className="max-h-[420px] overflow-y-auto px-2 py-3 scrollbar-none"
                     >
                       <SidebarNavigator
                         openFile={handleOpenFile}
