@@ -16,7 +16,7 @@ const PICKER_POPUP_ID = "compact-file-picker-popup";
 const PICKER_ANIMATION_MS = 240;
 const PICKER_TRIGGER_BG_CLOSE_DELAY_MS = 90;
 const PICKER_GAP_PX = 8;
-const PICKER_MAX_OPEN_HEIGHT = 560;
+const PICKER_MAX_LIST_HEIGHT = 320;
 const PICKER_VIEWPORT_HEIGHT_OFFSET = 96;
 const PICKER_CLOSED_RADIUS = 8;
 const PICKER_OPEN_RADIUS = 16;
@@ -24,7 +24,7 @@ const FALLBACK_PICKER_METRICS = {
   triggerWidth: 120,
   triggerHeight: 32,
   rootWidth: 360,
-  openHeight: 560,
+  openHeight: PICKER_MAX_LIST_HEIGHT,
 };
 
 interface PickerFrameGeometry {
@@ -45,6 +45,7 @@ export function CompactFileLayout() {
   const pickerRootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const pickerFrameRef = useRef<HTMLDivElement>(null);
+  const pickerListRef = useRef<HTMLDivElement>(null);
   const pickerContentScaleRef = useRef<HTMLDivElement>(null);
   const pickerBorderRef = useRef<HTMLDivElement>(null);
   const openFrameRef = useRef<number | null>(null);
@@ -56,13 +57,19 @@ export function CompactFileLayout() {
   const measurePickerMetrics = useCallback(() => {
     const triggerRect = triggerRef.current?.getBoundingClientRect();
     const rootRect = pickerRootRef.current?.getBoundingClientRect();
+    const triggerHeight = Math.ceil(triggerRect?.height ?? FALLBACK_PICKER_METRICS.triggerHeight);
+    const maxOpenHeight = Math.max(
+      triggerHeight,
+      Math.min(PICKER_MAX_LIST_HEIGHT, window.innerHeight - PICKER_VIEWPORT_HEIGHT_OFFSET),
+    );
+    const measuredListHeight = pickerListRef.current?.offsetHeight;
     const nextMetrics = {
       triggerWidth: Math.ceil(triggerRect?.width ?? FALLBACK_PICKER_METRICS.triggerWidth),
-      triggerHeight: Math.ceil(triggerRect?.height ?? FALLBACK_PICKER_METRICS.triggerHeight),
+      triggerHeight,
       rootWidth: Math.ceil(rootRect?.width ?? FALLBACK_PICKER_METRICS.rootWidth),
       openHeight: Math.max(
-        FALLBACK_PICKER_METRICS.triggerHeight,
-        Math.min(PICKER_MAX_OPEN_HEIGHT, window.innerHeight - PICKER_VIEWPORT_HEIGHT_OFFSET),
+        triggerHeight,
+        Math.min(maxOpenHeight, Math.ceil(measuredListHeight ?? maxOpenHeight)),
       ),
     };
     setPickerMetrics((currentMetrics) => {
@@ -135,13 +142,14 @@ export function CompactFileLayout() {
       typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measurePickerMetrics);
     if (triggerRef.current) resizeObserver?.observe(triggerRef.current);
     if (pickerRootRef.current) resizeObserver?.observe(pickerRootRef.current);
+    if (pickerListRef.current) resizeObserver?.observe(pickerListRef.current);
     window.addEventListener("resize", measurePickerMetrics);
 
     return () => {
       resizeObserver?.disconnect();
       window.removeEventListener("resize", measurePickerMetrics);
     };
-  }, [measurePickerMetrics]);
+  }, [isPickerMounted, measurePickerMetrics]);
 
   useEffect(() => {
     if (isNavigatorOpen || !isPickerMounted) return;
@@ -311,7 +319,7 @@ export function CompactFileLayout() {
               {isPickerMounted && (
                 <div
                   ref={pickerContentScaleRef}
-                  className="compact-picker-content-scale absolute inset-0 z-10"
+                  className="compact-picker-content-scale absolute left-0 top-0 z-10 w-full"
                   style={pickerContentScaleStyle}
                 >
                   <div
@@ -319,7 +327,10 @@ export function CompactFileLayout() {
                       isNavigatorOpen ? "compact-picker-content-open" : ""
                     }`}
                   >
-                    <ScrollFade className="h-full overflow-y-auto px-2 py-3 scrollbar-none">
+                    <ScrollFade
+                      ref={pickerListRef}
+                      className="max-h-[320px] overflow-y-auto px-2 py-3 scrollbar-none"
+                    >
                       <SidebarNavigator
                         openFile={handleOpenFile}
                         enableContextMenus={false}
