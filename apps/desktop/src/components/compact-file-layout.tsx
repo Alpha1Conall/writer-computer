@@ -42,6 +42,8 @@ export function CompactFileLayout() {
   const openCompactFile = useOpenCompactFile();
   const [isNavigatorOpen, setIsNavigatorOpen] = useState(false);
   const [isPickerMounted, setIsPickerMounted] = useState(false);
+  const [isTriggerHovered, setIsTriggerHovered] = useState(false);
+  const [isTriggerFocused, setIsTriggerFocused] = useState(false);
   const [pickerMetrics, setPickerMetrics] = useState(FALLBACK_PICKER_METRICS);
   const pickerRootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -200,6 +202,7 @@ export function CompactFileLayout() {
       ? "0ms"
       : `${PICKER_TRIGGER_BG_CLOSE_DELAY_MS}ms`,
   } as CSSProperties;
+  const shouldShowTriggerSurface = isPickerMounted || isTriggerHovered || isTriggerFocused;
   const pickerFrameStyle = {
     width: `${pickerMetrics.rootWidth}px`,
     height: `${pickerMetrics.openHeight}px`,
@@ -307,7 +310,7 @@ export function CompactFileLayout() {
       >
         <div
           ref={pickerRootRef}
-          className="group/compact-picker pointer-events-auto relative isolate flex w-[min(360px,calc(100vw-40px))] justify-center"
+          className="pointer-events-none relative isolate flex w-[min(360px,calc(100vw-40px))] justify-center"
         >
           <div
             id={isPickerMounted ? PICKER_POPUP_ID : undefined}
@@ -315,7 +318,7 @@ export function CompactFileLayout() {
             aria-label={isPickerMounted ? "File navigator" : undefined}
             data-state={isNavigatorOpen ? "open" : "closed"}
             className={`compact-picker-shell absolute left-0 top-0 z-0 ${
-              isPickerMounted ? "opacity-100" : "opacity-0 group-hover/compact-picker:opacity-100"
+              shouldShowTriggerSurface ? "opacity-100" : "opacity-0"
             }`}
             style={{
               ...pickerShellStyle,
@@ -376,7 +379,11 @@ export function CompactFileLayout() {
             aria-controls={isNavigatorOpen ? PICKER_POPUP_ID : undefined}
             aria-expanded={isNavigatorOpen}
             onClick={isNavigatorOpen ? closeNavigator : openNavigator}
-            className="relative z-30 inline-flex h-[var(--chrome-control-height)] max-w-[240px] items-center justify-center gap-1.5 rounded-lg border border-transparent bg-transparent px-3 font-[inherit] text-[13px] text-[var(--fg-base)]"
+            onFocus={() => setIsTriggerFocused(true)}
+            onBlur={() => setIsTriggerFocused(false)}
+            onPointerEnter={() => setIsTriggerHovered(true)}
+            onPointerLeave={() => setIsTriggerHovered(false)}
+            className="pointer-events-auto relative z-30 inline-flex h-[var(--chrome-control-height)] max-w-[240px] items-center justify-center gap-1.5 rounded-lg border border-transparent bg-transparent px-3 font-[inherit] text-[13px] text-[var(--fg-base)]"
           >
             <span className="relative min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
               {title}
