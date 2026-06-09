@@ -1,17 +1,24 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import * as tauri from "@/lib/tauri";
-import type { DirEntry } from "@/types/fs";
+import type { RecentFile } from "@/lib/tauri";
+
+interface GlobalRecentFiles {
+  files: RecentFile[];
+  /** Remove one entry from the global recents (optimistic + persisted). */
+  remove: (path: string) => void;
+  /** Re-fetch the list from the backend. */
+  refresh: () => void;
+}
 
 /** Global recently-opened files (cross-workspace, persisted in app data).
  *  Fetched whenever `enabled` becomes true (and on mount when it already
  *  is), so always-mounted consumers like the command palette refresh per
  *  open while per-open-mounted consumers fetch once. Entries are already
  *  pruned of deleted files server-side. */
-export function useGlobalRecentFiles(limit = 30, enabled = true): DirEntry[] {
-  const [files, setFiles] = useState<DirEntry[]>([]);
+export function useGlobalRecentFiles(limit = 30, enabled = true): GlobalRecentFiles {
+  const [files, setFiles] = useState<RecentFile[]>([]);
 
-  useEffect(() => {
-    if (!enabled) return;
+  const refresh = useCallback(() => {
     let cancelled = false;
     void tauri
       .getRecentFilesGlobal(limit)
@@ -24,7 +31,19 @@ export function useGlobalRecentFiles(limit = 30, enabled = true): DirEntry[] {
     return () => {
       cancelled = true;
     };
-  }, [enabled, limit]);
+  }, [limit]);
 
-  return files;
+  useEffect(() => {
+    if (!enabled) return;
+    return refresh();
+  }, [enabled, refresh]);
+
+  const remove = useCallback((path: string) => {
+    setFiles((prev) => prev.filter((file) => file.path !== path));
+    tauri.removeRecentFile(path).catch((error: unknown) => {
+      console.error("Failed to remove recent file", error);
+    });
+  }, []);
+
+  return { files, remove, refresh };
 }

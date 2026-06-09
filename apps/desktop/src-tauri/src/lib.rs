@@ -515,6 +515,7 @@ pub fn run() {
             commands::workspace::open_file_in_standalone_window,
             commands::workspace::watch_standalone_file,
             commands::recents::record_recent_file,
+            commands::recents::remove_recent_file,
             commands::recents::get_recent_files_global,
             commands::search::index_workspace,
             commands::search::fuzzy_search,

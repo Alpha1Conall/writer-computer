@@ -34,7 +34,7 @@ import { openStandaloneFile } from "@/hooks/use-open-drop";
 import { settingsKind } from "@/components/editor-area/page-kinds/settings";
 import { getFileName, getFileStem, getParentDir } from "@/lib/paths";
 import * as tauri from "@/lib/tauri";
-import type { DirEntry } from "@/types/fs";
+import type { RecentFile } from "@/lib/tauri";
 
 function toCreatePath(root: string, rawName: string) {
   const trimmed = rawName.trim();
@@ -67,7 +67,7 @@ export function CommandPalette() {
   // Standalone compact windows have no workspace index — search filters the
   // global recents list client-side instead of hitting fuzzy_search.
   const results = useFuzzySearch(isCompactFileMode ? "" : fileQuery);
-  const globalRecents = useGlobalRecentFiles(30, isOpen && isCompactFileMode);
+  const { files: globalRecents } = useGlobalRecentFiles(30, isOpen && isCompactFileMode);
   // In standalone mode new files are created next to the active file.
   const createBaseDir = root ?? (activeFilePath ? getParentDir(activeFilePath) : null);
   const createPath =
@@ -195,7 +195,7 @@ export function CommandPalette() {
 
   const visibleFiles: SearchResult[] =
     !isCreateIntent && trimmedSearch && !isCompactFileMode ? results : [];
-  const visibleRecents: DirEntry[] =
+  const visibleRecents: RecentFile[] =
     !isCreateIntent && isCompactFileMode && trimmedSearch
       ? globalRecents.filter(
           (entry) =>

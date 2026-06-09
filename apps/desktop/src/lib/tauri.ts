@@ -127,11 +127,24 @@ export function watchStandaloneFile(path: string): Promise<void> {
 }
 
 // Global recents (persisted across workspaces in the app data dir)
+/** A recently-opened file with its last-opened time. `opened_at` is unix
+ *  seconds; `0` marks a legacy entry whose open time is unknown. */
+export interface RecentFile {
+  path: string;
+  name: string;
+  title: string | null;
+  opened_at: number;
+}
+
 export function recordRecentFile(path: string): Promise<void> {
   return invoke("record_recent_file", { path });
 }
 
-export function getRecentFilesGlobal(limit?: number): Promise<DirEntry[]> {
+export function removeRecentFile(path: string): Promise<void> {
+  return invoke("remove_recent_file", { path });
+}
+
+export function getRecentFilesGlobal(limit?: number): Promise<RecentFile[]> {
   return invoke("get_recent_files_global", { limit: limit ?? null });
 }
 
