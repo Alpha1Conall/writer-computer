@@ -3,14 +3,48 @@ import { listen } from "@tauri-apps/api/event";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { getWorkspaceChromeMode } from "@/lib/compact-mode";
 import { mark } from "@/lib/startup-metrics";
 import type { PendingOpenPayload } from "@/lib/tauri";
+import type { FileContent } from "@/types/fs";
 import * as tauri from "@/lib/tauri";
+
+/** Open a file in this window's standalone compact chrome and re-point the
+ *  single-file watcher at it. The shared path for startup, drag-drop, the
+ *  compact picker, and the command palette. */
+export async function openStandaloneFile(path: string, prefetched: FileContent | null = null) {
+  useWorkspaceStore.getState().setChromeMode("compact-file");
+  await useEditorStore.getState().openCompactFile(path, prefetched);
+  // Startup already started the watcher Rust-side; re-watching the same
+  // path is harmless and keeps this a single code path.
+  try {
+    await tauri.watchStandaloneFile(path);
+  } catch (error) {
+    console.error("Failed to watch standalone file", error);
+  }
+}
 
 export async function handleOpenPayload(payload: PendingOpenPayload) {
   const workspaceState = useWorkspaceStore.getState();
   const current = workspaceState.root;
+
+  // File-only payload: standalone compact open. A window hosting a
+  // workspace never switches chrome — the file gets its own window.
+  if (!payload.workspace) {
+    if (!payload.file) return;
+    if (current) {
+      await tauri.openFileInStandaloneWindow(payload.file);
+      return;
+    }
+    await openStandaloneFile(payload.file);
+    return;
+  }
+
+  // Folder payload onto a standalone compact window: keep this window
+  // pure and open the workspace in a fresh window.
+  if (!current && workspaceState.chromeMode === "compact-file") {
+    await tauri.openWorkspaceInNewWindow(payload.workspace, payload.file);
+    return;
+  }
 
   // Different workspace: open in a new in-process window so the current
   // window is preserved. The new window pre-queues the pending-open payload
@@ -25,22 +59,8 @@ export async function handleOpenPayload(payload: PendingOpenPayload) {
   }
 
   if (payload.file) {
-    const latestWorkspaceState = useWorkspaceStore.getState();
-    const chromeMode = getWorkspaceChromeMode(
-      latestWorkspaceState.root,
-      latestWorkspaceState.chromeMode,
-    );
-    if (!current || chromeMode === "compact-file") {
-      latestWorkspaceState.setChromeMode("compact-file");
-      await useEditorStore.getState().openCompactFile(payload.file);
-      return;
-    }
-
     await useEditorStore.getState().openFile(payload.file);
-    return;
   }
-
-  useWorkspaceStore.getState().setChromeMode("workspace");
 }
 
 let openTask: Promise<void> = Promise.resolve();
@@ -114,7 +134,9 @@ async function resolveStartup() {
       recentWorkspaces: startup.recent_workspaces,
     });
 
-    if (startup.restore_bundle) {
+    if (startup.standalone_file) {
+      await openStandaloneFile(startup.standalone_file.path, startup.standalone_file);
+    } else if (startup.restore_bundle) {
       await useWorkspaceStore.getState().restoreFromBundle(startup.restore_bundle);
     }
   } catch (error) {

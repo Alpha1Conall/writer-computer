@@ -16,28 +16,25 @@ import {
   useOpenCommandPalette,
   useSetCommandPaletteSearch,
 } from "@/hooks/use-command-palette";
-import { useSetSetting } from "@/hooks/use-settings";
 import { useSidebar } from "@/hooks/use-sidebar";
+import { useIsCompactFileMode, useWorkspace } from "@/hooks/use-workspace";
 import {
-  useIsCompactFileMode,
-  useSetWorkspaceChromeMode,
-  useWorkspace,
-} from "@/hooks/use-workspace";
-import {
+  useActiveFilePath,
   useActiveTabId,
   useCloseActiveTab,
   useCloseTab,
-  useOpenCompactFile,
   useOpenFile,
   useOpenSettingsTab,
   useOpenTabs,
 } from "@/hooks/use-tabs";
 import { useTheme } from "@/hooks/use-theme";
 import { useFuzzySearch } from "./use-fuzzy-search";
+import { useGlobalRecentFiles } from "@/hooks/use-global-recent-files";
+import { openStandaloneFile } from "@/hooks/use-open-drop";
 import { settingsKind } from "@/components/editor-area/page-kinds/settings";
-import { COMPACT_MODE_SETTING_KEY } from "@/lib/compact-mode";
-import { getFileName } from "@/lib/paths";
+import { getFileName, getFileStem, getParentDir } from "@/lib/paths";
 import * as tauri from "@/lib/tauri";
+import type { DirEntry } from "@/types/fs";
 
 function toCreatePath(root: string, rawName: string) {
   const trimmed = rawName.trim();
@@ -55,29 +52,33 @@ export function CommandPalette() {
   const { toggleSidebar } = useSidebar();
   const { root, isIndexing, openWorkspace, closeWorkspace } = useWorkspace();
   const openFile = useOpenFile();
-  const openCompactFile = useOpenCompactFile();
   const closeActiveTab = useCloseActiveTab();
   const closeTab = useCloseTab();
   const activeTabId = useActiveTabId();
+  const activeFilePath = useActiveFilePath();
   const tabs = useOpenTabs();
   const { toggleTheme } = useTheme();
-  const setSetting = useSetSetting();
-  const setChromeMode = useSetWorkspaceChromeMode();
   const openSettingsTab = useOpenSettingsTab();
   const isCompactFileMode = useIsCompactFileMode();
 
   const isCreateIntent = intent === "create-file";
   const trimmedSearch = search.trim();
   const fileQuery = isCreateIntent ? "" : search;
-  const results = useFuzzySearch(fileQuery);
-  const createPath = root && trimmedSearch ? toCreatePath(root, trimmedSearch) : null;
+  // Standalone compact windows have no workspace index — search filters the
+  // global recents list client-side instead of hitting fuzzy_search.
+  const results = useFuzzySearch(isCompactFileMode ? "" : fileQuery);
+  const globalRecents = useGlobalRecentFiles(30, isOpen && isCompactFileMode);
+  // In standalone mode new files are created next to the active file.
+  const createBaseDir = root ?? (activeFilePath ? getParentDir(activeFilePath) : null);
+  const createPath =
+    createBaseDir && trimmedSearch ? toCreatePath(createBaseDir, trimmedSearch) : null;
 
   function matchesSearch(text: string, q: string) {
     return text.toLowerCase().includes(q.toLowerCase());
   }
 
   function handleSelect(path: string) {
-    void (isCompactFileMode ? openCompactFile(path) : openFile(path));
+    void (isCompactFileMode ? openStandaloneFile(path) : openFile(path));
     close();
   }
 
@@ -88,7 +89,7 @@ export function CommandPalette() {
     void (async () => {
       await tauri.createFile(createPath);
       if (isCompactFileMode) {
-        await openCompactFile(createPath);
+        await openStandaloneFile(createPath);
       } else {
         await openFile(createPath);
       }
@@ -98,15 +99,13 @@ export function CommandPalette() {
   async function handleOpenWorkspace() {
     const picked = await tauri.pickWorkspace();
     if (picked) {
-      await openWorkspace(picked);
+      // Standalone compact windows stay pure — workspaces open elsewhere.
+      if (isCompactFileMode) {
+        await tauri.openWorkspaceInNewWindow(picked);
+      } else {
+        await openWorkspace(picked);
+      }
     }
-    close();
-  }
-
-  function handleToggleCompactMode() {
-    const next = !isCompactFileMode;
-    void setSetting(COMPACT_MODE_SETTING_KEY, next);
-    if (!next) setChromeMode("workspace");
     close();
   }
 
@@ -123,12 +122,22 @@ export function CommandPalette() {
           close();
         },
       },
-    root && {
+    (root || (isCompactFileMode && activeFilePath)) && {
       id: "new-file",
       label: "Create New File",
       description: "Command",
       run: () => openCommandPalette("create-file"),
     },
+    root &&
+      activeFilePath && {
+        id: "open-in-compact-window",
+        label: "Open File in Compact Window",
+        description: "Command",
+        run: () => {
+          void tauri.openFileInStandaloneWindow(activeFilePath);
+          close();
+        },
+      },
     activeTabId &&
       !isCompactFileMode && {
         id: "close-tab",
@@ -173,12 +182,6 @@ export function CommandPalette() {
         close();
       },
     },
-    {
-      id: "toggle-compact-mode",
-      label: "Toggle Compact Mode",
-      description: "Command",
-      run: handleToggleCompactMode,
-    },
     !isCompactFileMode && {
       id: "open-settings",
       label: "Settings",
@@ -190,13 +193,24 @@ export function CommandPalette() {
     },
   ].filter((c): c is Command => Boolean(c));
 
-  const visibleFiles: SearchResult[] = !isCreateIntent && trimmedSearch ? results : [];
+  const visibleFiles: SearchResult[] =
+    !isCreateIntent && trimmedSearch && !isCompactFileMode ? results : [];
+  const visibleRecents: DirEntry[] =
+    !isCreateIntent && isCompactFileMode && trimmedSearch
+      ? globalRecents.filter(
+          (entry) =>
+            matchesSearch(entry.title ?? "", trimmedSearch) ||
+            matchesSearch(entry.name, trimmedSearch) ||
+            matchesSearch(entry.path, trimmedSearch),
+        )
+      : [];
   const visibleCommands = isCreateIntent
     ? []
     : trimmedSearch
       ? commands.filter((c) => matchesSearch(c.label, trimmedSearch))
       : commands;
-  const firstValue = visibleCommands[0]?.id ?? visibleFiles[0]?.path ?? "";
+  const firstValue =
+    visibleCommands[0]?.id ?? visibleFiles[0]?.path ?? visibleRecents[0]?.path ?? "";
 
   const listRef = useRef<HTMLDivElement>(null);
   const [selectedValue, setSelectedValue] = useState(firstValue);
@@ -250,13 +264,19 @@ export function CommandPalette() {
           </>
         ) : (
           <>
-            {visibleFiles.length === 0 && visibleCommands.length === 0 && (
-              <CommandEmpty>
-                {isIndexing && trimmedSearch ? "Indexing workspace..." : "No results found."}
-              </CommandEmpty>
-            )}
+            {visibleFiles.length === 0 &&
+              visibleRecents.length === 0 &&
+              visibleCommands.length === 0 && (
+                <CommandEmpty>
+                  {isIndexing && trimmedSearch && !isCompactFileMode
+                    ? "Indexing workspace..."
+                    : "No results found."}
+                </CommandEmpty>
+              )}
 
-            {(visibleFiles.length > 0 || visibleCommands.length > 0) && (
+            {(visibleFiles.length > 0 ||
+              visibleRecents.length > 0 ||
+              visibleCommands.length > 0) && (
               <CommandGroup
                 heading={
                   trimmedSearch ? (isIndexing ? "Results (indexing...)" : "Results") : "Suggested"
@@ -277,6 +297,21 @@ export function CommandPalette() {
                       <span className="truncate">{getFileName(r.path)}</span>
                       <span className="truncate text-[13px] text-text-muted">
                         {renderHighlightedPath(r.relative_path, r.match_indices)}
+                      </span>
+                    </div>
+                  </CommandItem>
+                ))}
+
+                {visibleRecents.map((entry) => (
+                  <CommandItem
+                    key={entry.path}
+                    value={entry.path}
+                    onSelect={() => handleSelect(entry.path)}
+                  >
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate">{entry.title || getFileStem(entry.name)}</span>
+                      <span className="truncate text-[13px] text-text-muted">
+                        {getParentDir(entry.path)}
                       </span>
                     </div>
                   </CommandItem>

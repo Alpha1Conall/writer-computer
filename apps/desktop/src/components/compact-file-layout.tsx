@@ -7,9 +7,10 @@ import {
   useState,
 } from "react";
 import { EditorArea } from "./editor-area";
-import { SidebarNavigator } from "./sidebar/sidebar-navigator";
+import { CompactRecentsList } from "./compact-recents-list";
 import { ScrollFade } from "@/components/scroll-fade";
-import { useActiveFilePath, useOpenCompactFile, useOpenFiles } from "@/hooks/use-tabs";
+import { useActiveFilePath, useOpenFiles } from "@/hooks/use-tabs";
+import { openStandaloneFile } from "@/hooks/use-open-drop";
 import { getFileName } from "@/lib/paths";
 
 const PICKER_POPUP_ID = "compact-file-picker-popup";
@@ -39,7 +40,6 @@ interface PickerFrameGeometry {
 export function CompactFileLayout() {
   const activeFilePath = useActiveFilePath();
   const openFiles = useOpenFiles();
-  const openCompactFile = useOpenCompactFile();
   const [isNavigatorOpen, setIsNavigatorOpen] = useState(false);
   const [isPickerMounted, setIsPickerMounted] = useState(false);
   const [isTriggerHovered, setIsTriggerHovered] = useState(false);
@@ -89,12 +89,9 @@ export function CompactFileLayout() {
     });
   }, []);
 
-  const handleOpenFile = useCallback(
-    async (path: string) => {
-      await openCompactFile(path);
-    },
-    [openCompactFile],
-  );
+  const handleOpenFile = useCallback(async (path: string) => {
+    await openStandaloneFile(path);
+  }, []);
 
   const openNavigator = useCallback(() => {
     if (openFrameRef.current) {
@@ -352,11 +349,10 @@ export function CompactFileLayout() {
                       ref={pickerListRef}
                       className="max-h-[420px] overflow-y-auto px-2 py-3 scrollbar-none"
                     >
-                      <SidebarNavigator
+                      <CompactRecentsList
                         openFile={handleOpenFile}
-                        enableContextMenus={false}
                         onOpenFileComplete={closeNavigator}
-                        className="flex flex-col gap-4"
+                        className="flex flex-col gap-2"
                       />
                     </ScrollFade>
                   </div>

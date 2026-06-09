@@ -6,6 +6,7 @@
 
 ## Done
 
+- Global-scoped compact mode: [`SPECs/global-compact-mode-spec.md`](SPECs/global-compact-mode-spec.md) — compact windows are fully workspace-free (no root, no indexing, parent-dir single-file watcher), the picker shows a persisted global recent-files list, and the workspace-scoped compact setting is replaced by an "Open File in Compact Window" command.
 - Compact picker trigger hit area — scope the closed trigger surface hover/focus state to the pill instead of the full picker-width wrapper.
 - Compact picker trigger close hold — keep the closed trigger surface visible for 300ms after the picker close morph, then fade it with the picker opacity curve.
 - Compact picker shadow fade — move the light-mode popover shadow to an opacity-animated layer so it fades out on close.

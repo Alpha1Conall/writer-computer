@@ -142,10 +142,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   closeWorkspace: () => {
     const root = get().root;
     if (!root) return;
-    if (get().chromeMode !== "compact-file") {
-      const snapshot = getEditorSessionSnapshot(useEditorStore.getState());
-      void saveSession(root, snapshot.tabs, snapshot.activeIndex);
-    }
+    const snapshot = getEditorSessionSnapshot(useEditorStore.getState());
+    void saveSession(root, snapshot.tabs, snapshot.activeIndex);
     useEditorStore.setState({
       openFiles: new Map(),
       tabs: [],
@@ -175,7 +173,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     set({
       root: bundle.workspace.root,
-      chromeMode: bundle.open_file ? "compact-file" : "workspace",
+      chromeMode: "workspace",
       fileCount: bundle.workspace.file_count,
       isIndexing: true,
       directoryCache: new Map([[bundle.workspace.root, bundle.entries]]),
@@ -206,7 +204,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
 
     if (bundle.open_file) {
-      void useEditorStore.getState().openCompactFile(bundle.open_file);
+      // Workspace+file open (open_workspace_in_new_window with a file):
+      // the requested file becomes a normal tab in workspace chrome.
+      void useEditorStore.getState().openFile(bundle.open_file);
       return;
     }
 
@@ -392,9 +392,10 @@ if (typeof window !== "undefined") {
     if (state.tabs === prev.tabs && state.activeTabId === prev.activeTabId) return;
     if (sessionSaveTimer) clearTimeout(sessionSaveTimer);
     sessionSaveTimer = setTimeout(() => {
+      // Standalone compact windows have no root, so they never persist a
+      // session — the root check covers both cases.
       const root = useWorkspaceStore.getState().root;
       if (!root) return;
-      if (useWorkspaceStore.getState().chromeMode === "compact-file") return;
       const snapshot = getEditorSessionSnapshot(useEditorStore.getState());
       void saveSession(root, snapshot.tabs, snapshot.activeIndex);
     }, 500);
@@ -404,7 +405,6 @@ if (typeof window !== "undefined") {
     if (sessionSaveTimer) clearTimeout(sessionSaveTimer);
     const root = useWorkspaceStore.getState().root;
     if (!root) return;
-    if (useWorkspaceStore.getState().chromeMode === "compact-file") return;
     const snapshot = getEditorSessionSnapshot(useEditorStore.getState());
     void saveSession(root, snapshot.tabs, snapshot.activeIndex);
   });
