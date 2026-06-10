@@ -6,8 +6,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft01Icon, ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import { EditorArea } from "./editor-area";
 import { CompactRecentsList } from "./compact-recents-list";
 import { ScrollFade } from "@/components/scroll-fade";
@@ -439,13 +437,13 @@ function CompactNavControls() {
     <div className="pointer-events-auto flex items-center gap-0.5">
       <CompactNavButton
         label="Back"
-        icon={ArrowLeft01Icon}
+        glyph="←"
         disabled={!canNavigateBack}
         onClick={() => void navigateBack()}
       />
       <CompactNavButton
         label="Forward"
-        icon={ArrowRight01Icon}
+        glyph="→"
         disabled={!canNavigateForward}
         onClick={() => void navigateForward()}
       />
@@ -455,21 +453,23 @@ function CompactNavControls() {
 
 interface CompactNavButtonProps {
   label: string;
-  icon: typeof ArrowLeft01Icon;
+  glyph: string;
   disabled: boolean;
   onClick: () => void;
 }
 
-function CompactNavButton({ label, icon, disabled, onClick }: CompactNavButtonProps) {
+function CompactNavButton({ label, glyph, disabled, onClick }: CompactNavButtonProps) {
   return (
     <button
       type="button"
       aria-label={label}
+      title={label}
       disabled={disabled}
+      onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
-      className="inline-flex h-[var(--chrome-control-height)] w-[var(--chrome-control-height)] items-center justify-center rounded-lg text-[var(--text-icon-muted)] transition-colors hover:bg-[var(--surface-subtle)] hover:text-[var(--fg-base)] disabled:pointer-events-none disabled:opacity-30"
+      className="flex h-[var(--chrome-control-height)] w-7 items-center justify-center rounded-lg text-base text-[var(--text-icon-muted)] transition-colors enabled:hover:bg-[var(--surface-subtle)] enabled:hover:text-[var(--text-secondary)] disabled:opacity-30"
     >
-      <HugeiconsIcon icon={icon} size={18} color="currentColor" strokeWidth={1.8} />
+      {glyph}
     </button>
   );
 }
