@@ -9,6 +9,11 @@
 - Add back/forward arrows to the top-left of the compact topbar (mirroring the existing Alt+←/→ shortcuts), disabled at the ends of history. Drop the dimmed parent-directory path from the compact picker rows so they show the title only.
 - Rework the compact picker into a sidebar-styled, non-hovering, labeled, title-only global recents list that omits the active file and reveals a small X on row hover to remove entries from recents. The global recents store records a per-file `opened_at` timestamp (migrating the previous string-array format in place) and exposes a `remove_recent_file` command.
 
+## 2026-06-05
+
+- Refactor the marketing website from a plain Vite React app to TanStack Start. The homepage now lives in Start file routes with a root document for metadata, favicon, stylesheet, and analytics script handling; the build prerenders `/` into `apps/website/dist/client` for the existing Cloudflare static assets Worker.
+- Keep marketing-site demo videos visible in prerendered output instead of relying on a hydration-time `loadeddata` event to reveal them.
+
 ## 2026-06-03
 
 - Redesign the sidebar into collapsible `Pinned`, `Recents`, and `Everything` sections. The existing file tree now lives under Everything; files can be pinned/unpinned into Pinned; Recents is metadata-sorted from the workspace index with cached pagination so Show More does not rescan the workspace.
@@ -19,6 +24,10 @@
 - Add Compact Mode as a persisted Appearance setting and command-palette toggle, and remove the debug-only compact launch environment variable.
 - Stop auto-expanding and scrolling the `Everything` tree when a file is opened from Pinned, Recents, search, links, or other open paths. The explicit tab context menu `Reveal in sidebar` action still expands ancestors and scrolls the tree on demand.
 - Add a large subtle shadow to the shared floating card surface used by the command palette and related popovers.
+
+## 2026-06-02
+
+- Fix Mermaid error messages rendering as a vertical column of characters. The diagram stage now expands to fill the viewport when displaying an error so the message lays out horizontally, and resets on valid re-render.
 
 ## 2026-06-01
 
