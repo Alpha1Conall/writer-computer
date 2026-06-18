@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-06-16
+
+- Drag files and folders in the sidebar's `Everything` tree to move them. Drop onto a folder to move inside it, onto a file to move into that file's folder, or onto empty tree space to move to the workspace root; a multi-selection moves together. Open tabs, pinned files, and expanded folders follow the move, and name collisions are reported instead of overwriting. Dragging uses pointer events so it coexists with the existing Finder-drop-to-open behavior.
+
 ## 2026-06-09
 
 - Make compact mode fully global instead of workspace-scoped. Opening a markdown file directly (CLI, Finder, drag-drop) now opens a standalone compact window with no workspace at all — no file/folder indexing, no recursive watcher, no gitignore loading — so single-file windows open fast. The open file is still watched for external changes via a lightweight non-recursive watch on its parent directory that survives atomic-rename saves.
